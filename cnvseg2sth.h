@@ -3,7 +3,7 @@
  *  (seg2sth.h
  *   SEG2STH)
  *
- *  Created by Ian Kelly on 21/05/2012.
+ *  MASTER Created by Ian Kelly on 21/05/2012.
  *  Copyright 2013, 2012 Westheimer Energy Consulting Ltd. All rights reserved.
  * 
  */
