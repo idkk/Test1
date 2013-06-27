@@ -1,5 +1,5 @@
 /*******************************************************************************
- *  cnvseg2sth.c		
+ *  cnvseg2sth.c STABLE BRANCH		
  *  Copyright 2013, 2012 Westheimer Energy Consulting Ltd. All rights reserved.
  ******************************************************************************/
 
