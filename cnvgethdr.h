@@ -1,54 +1,15 @@
 /*******************************************************************************
- *  Start of cnvsth2seg.h		
+ *  Start of cnvgethdr.h        
  *  Copyright (c) 2013 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
  ******************************************************************************/
 
-#ifndef CNVSTH2SEG
-#define CNVSTH2SEG
-
-//#define STHVERSION  "0.49"  /* Base version of cnvsth2seg for this program */
-#define STHVERSION "0.67"
-#define STHDATE  "16 September 2013:11.45"
+#ifndef CNVGETHDR
+#define CNVGETHDR
 
 
-/*
- *  This is the set of type definitions, and record definitions for
- *
- *                cnvsth2segT
- *                (based upon program cnvsth2seg version 0.49)
- *
- *  It contains:
- *     the lengths of the various records processed
- *     error exit conditions for the program
- *     definitions of the record field lengths
- *     definitions of the record field displacements
- *     global type definitions
- *     forward declarations of procedures
- */
+#define STHVERSION "0.20"
+#define STHDATE  "25 October 2013:10.40"
 
-/*
- *  DEBUG (Trace) flags (with mnemonics for a possible enclosing shell script)
- *
- *  1      t1    a Show File Header lengths & displacements
- *  2      t2    b Show Trace Header lengths & displacements
- *  4      t4    c Show Trace Data lengths & displacements
- *  8      t8    d FH and TH record lengths displayed, & samples at FH
- *  16     t3    e Details of EOF detection
- *  32     t5    f Record count at TH and TD reading
- *  64     t6    g Lengths at TH read, TH write
- *  128    t7    h Lengths at TD read, TD write
- *  256    t9    i Initial data display of TD
- *  512    t10   j Program loop length displays
- *  1024   t11   k TH field contents
- *  2048   t12   l TH field contents details
- *  4096   t13   m FH record contents
- *  8192   t14   n FH record contents details
- *  16384  t15   o Show per-record data lengths
- *
- *  If any trace flag is on, then some Trace Header and file opening 
- *  information and samples counts will be shown
- *
- */
 
 #define NAMELEN  4096
 
@@ -65,7 +26,7 @@
 
 /*
  *  Maxima for the number of samples in each direction -
- *  for the moment (Release 0.57) these are fixed maxima:
+ *  for the moment (October 25 2013) these are fixed maxima:
  */
 #define MAXTIMESLICE  99999
 #define MAXCROSSSLICE 99999
@@ -127,15 +88,10 @@
 
 /* Forward declaration of procedures: */
 int         tfclose     (FILE  *a);
-int         FHwrite     (unsigned char *a, int b, FILE *c, char *d);
-int         DbgShowFlds (int t1, int t2, int t4);
-int         DumpRec      (unsigned char *Rec, int len);
-int         ShowTHRecord (unsigned char *THRec, int t12);
-int         ShowFHRecord (unsigned char *FHRec, int t14);
 
 #endif
 
 /*******************************************************************************
- *  End of cnvsth2seg.h		
+ *  End of cnvgethdr.h        
  *  Copyright (c) 2013 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
  ******************************************************************************/

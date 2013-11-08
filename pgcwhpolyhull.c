@@ -1,11 +1,11 @@
 /*
- ** Copyright (c) 2013, 2012, 2011 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
+ ** Copyright (c) 2011-2013 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
  **
  ** pgcwhpolyhull.c (part of pgcwhpolygon) 
  ** 
  */
 
-/* This file last updated 20130528:1305 */
+/* This file last updated 20130815:1345 */
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -18,6 +18,8 @@
 #include <limits.h>
 #include <math.h>         /* for sqrt()      */
 
+#include "cnvswap.h"
+#include "cnvendian.h"
 #include "pgcwhpolygon.h"
 
 
@@ -38,11 +40,6 @@ ConvexHullRings(struct ring  *startRing)
     /*
 	 ** For each 'ring' in the circular linked list
 	 */
-//    fprintf(stderr,"DEBUG: about to ConvexHullRings, ret= %d\n",ret);
-//	if (tpbits[TCONVX] != 0)
-//	{
-//            fprintf(stderr, "ConvexHullRings: Build ConvexHull (ring) ...\n");
-//	}
     while (thisRing != startRing)
     {
         ringCnt++;
@@ -59,10 +56,6 @@ ConvexHullRings(struct ring  *startRing)
 		 ** Box bounding the Polygon - ie identify some points that are
 		 ** definitely on the Convex Hull
 		 */
-//		if (tpbits[TCONVX] != 0)
-//		{
-//			fprintf(stderr, "ConvexHullRings:   Indentify Initial CH Points\n");
-//		}
         if ((thisRing = ConvexHullInitialPoints(thisRing)) ==
 			(struct ring *)NULL)
         {
@@ -81,11 +74,6 @@ ConvexHullRings(struct ring  *startRing)
 		 ** turned into their own 'ring'
 		 ** ie We may add more than 'ring's
 		 */
-//		if (tpbits[TCONVX] != 0)
-//		{
-//                fprintf(stderr,
-//                        "ConvexHullRings:   Indentify Other CH Points\n");
-//		}
         if ((ConvexHullPoints(thisRing)) == CHPERROR)
         {
             fprintf(stderr, "ERROR: Failed to build Convex Hull\n");
@@ -101,11 +89,6 @@ ConvexHullRings(struct ring  *startRing)
 		 */
         if (ret == CHPCNCAV)
         {
-//			if (tpbits[TCONVX] != 0)
-//			{
-//                    fprintf(stderr,
-//                            "ConvexHullRings:   Cut out Concave Segments\n");
-//			}
             if ((ConvexHullConcave(thisRing)) == CHPERROR)
             {
                 fprintf(stderr, "ERROR: Failed to extract Concave Segment\n");
@@ -120,10 +103,6 @@ ConvexHullRings(struct ring  *startRing)
 		 ** Step to the next 'ring' in the circular linked list
 		 **   - if there is one -
 		 */
-//		if (tpbits[TCONVX] != 0)
-//		{
-//                fprintf(stderr, "ConvexHullRings:   Next Ring ...\n");
-//		}
         if (thisRing->next == (struct ring *)NULL)
         {
             fprintf(stderr, "(%d) Ring Circle Broken for CH Generation\n",
@@ -139,35 +118,11 @@ ConvexHullRings(struct ring  *startRing)
     }
 	
     /*
-	 ** Show the rings again, as there may be more now ...
-	 */
-//    if (tprint != 0)
-//    {
-//        fprintf(stderr,
-//            "DEBUG: (ConvexHullRings) before AllDirections ShowRings, ret= %d\n",
-//                ret);
-//        ShowRings(startRing);
-//        ShowRingBoxes(startRing);
-//        ShowRingDiamonds(startRing);
-//    }
-    /*
      ** Now show the rings again - but this time having set the directions
      ** for all of the rings:
      */
     AllDirections(ringCnt, startRing);
 
-//    if (tprint != 0)
-//    {
-//        fprintf(stderr,
-//                "DEBUG: (ConvexHullRings) after AllDirections ShowRings, ret= %d\n",
-//                ret);
-//        ShowRings(startRing);
-//        ShowRingBoxes(startRing);
-//        ShowRingDiamonds(startRing);
-//        fprintf(stderr,
-//                "DEBUG: (ConvexHullRings) end Alldirections, ret= %d\n",
-//                ret);
-//    }
 	
     return(ret);
 }
@@ -193,10 +148,6 @@ ConvexHullInitialPoints(struct ring *thisRing)
 	 ** Find the northern-, eastern-, southern-, and western-most points,
 	 ** as they are part of the Convex Hull and our starting points ...
 	 */
-//	if (tpbits[TCONVX] != 0)
-//	{
-//            fprintf(stderr, "ConvexHullInitialPoints: Build Box ...\n");
-//	}
 	
     while (thisPoint != startPoint)
     {
@@ -277,25 +228,9 @@ ConvexHullInitialPoints(struct ring *thisRing)
     }
 	
     /*
-	 ** Let's just see the Box we just built ...
-	 */
-//    fprintf(stderr,"DEBUG: (ConvexHullInitialPoints) start box=\n");
-//    ShowBox(&startBox);
-	/*
-	 ** ... and let's see the diamond too:
-	 */
-//    fprintf(stderr,"DEBUG: (ConvexHullInitialPoints) start diamond=\n");
-//	ShowDiamond(&startDiamond);
-	
-    /*
 	 ** Now we must run through the list again and mark all Points that contain
 	 ** contain one (or more) of the Box values as on our Convex Hull
 	 */
-//	if (tpbits[TCONVX] != 0)
-//	{
-//            fprintf(stderr,
-//                    "ConvexHullInitialPoints: Mark Initial CH Points ...\n");
-//	}
     thisPoint = (struct points *)NULL;
     while (thisPoint != startPoint)
     {
@@ -358,10 +293,6 @@ ConvexHullPoints(struct ring *thisRing)
 	long double distance;
     long double tstX1, tstY1;
 	
-//	if (tpbits[TCONVX] != 0)
-//	{
-//            fprintf(stderr, "ConvexHullPoints: Mark Rest of CH Points ...\n");
-//	}
     thisPoint = startPoint;
     while (thisPoint != beginPoint)
     {
@@ -375,13 +306,6 @@ ConvexHullPoints(struct ring *thisRing)
 			
             continue;
         }
-// 		if (tpbits[TCONVX] != 0)
-//		{
-//                fprintf(stderr,
-//                        "ConvexHullPoints:    (%2d):(" FMTX "," FMTY 
-//                        ") Start Point\n",
-//                        thisPoint->pos, thisPoint->pt.x, thisPoint->pt.y);
-//		}
 		
         /*
 		 ** First time in, setup the 'begin' Ptr to the first Convex Hull point
@@ -408,12 +332,6 @@ ConvexHullPoints(struct ring *thisRing)
             {
                 nextPoint = nextPoint->next;
             }
-//			if (tpbits[TCONVX] != 0)
-//			{
-//                fprintf(stderr,
-//                   "ConvexHullPoints:    (%2d):(" FMTX "," FMTY ") End Point\n",
-//                   nextPoint->pos, nextPoint->pt.x, nextPoint->pt.y);
-//			}
 			
             /*
 			 ** We now have two ends of a 'line' and can check any intermediate
@@ -430,20 +348,6 @@ ConvexHullPoints(struct ring *thisRing)
             h     = sqrtl((long double)((xdiff * xdiff) + (ydiff * ydiff)));
             s     = ydiff / h;
             c     = xdiff / h;
-// 			if (tpbits[TCONVX] != 0)
-//			{
-//                fprintf(stderr,"ConvexHullPoints:    Test (%2d)(" FMTX "," FMTY 
-//                        ") to (%2d)(" FMTX "," FMTY ")\n",
-//                       thisPoint->pos, thisPoint->pt.x, thisPoint->pt.y,
-//                       nextPoint->pos, nextPoint->pt.x, nextPoint->pt.y);
-//			}
-            /*
-			 **  DEBUG
-			 printf("ConvexHullPoints:        xdiff (%Lg) ydiff (%Lg)\n",
-			 xdiff, ydiff);
-			 printf("ConvexHullPoints:        h (%Lg) s (%Lg) c (%Lg)\n",h,s,c);
-			 **  END DEBUG
-			 */
 			
             /*
 			 ** For each point between the Start and End points ...
@@ -461,28 +365,13 @@ ConvexHullPoints(struct ring *thisRing)
                     tstY1    = testPoint->pt.y - thisPoint->pt.y;
                     distance = (tstY1 * c) - (tstX1 * s);
 					
-// 					if (tpbits[TCONVX] != 0)
-//					{
-//                        fprintf(stderr,"ConvexHullPoints:      point (%2d):(" 
-//                                FMTX "," FMTY ") d(%Lg) ",
-//                               testPoint->pos, testPoint->pt.x, testPoint->pt.y,
-//                               distance);
-//					}
                     if (distance < 0)       /* OUT */
                     {
-//						if (tpbits[TCONVX] != 0)
-//						{
-//                                fprintf(stderr, "<  NOT on this CH\n");
-//						}
                         testPoint->chflag = CVXHULLNO;
                         ret = CHPCNCAV;
                     }
                     else                    /* IN or ON the line */
                     {
-//						if (tpbits[TCONVX] != 0)
-//						{
-//                                fprintf(stderr,"%c  ", distance == 0 ? '|' : '>');
-//						}
 						
                         /*
 						 ** Remember the greatest 'distance' so far ...
@@ -490,10 +379,6 @@ ConvexHullPoints(struct ring *thisRing)
 						 */
                         if (distPoint == (struct points *)NULL)
                         {
-//							if (tpbits[TCONVX] != 0)
-//							{
-//                                    fprintf(stderr, "Max so far\n");
-//							}
                             distPoint = testPoint;
                             distPoint->distance = distance;
                         }
@@ -501,10 +386,6 @@ ConvexHullPoints(struct ring *thisRing)
                         {
                             if (distPoint->distance < distance)
                             {
-//								if (tpbits[TCONVX] != 0)
-//								{
-//                                        fprintf(stderr,"Max so far\n");
-//								}
                                 distPoint->distance = -1;
 								
                                 distPoint = testPoint;
@@ -512,22 +393,12 @@ ConvexHullPoints(struct ring *thisRing)
                             }
                             else
                             {
-//								if (tpbits[TCONVX] != 0)
-//								{
-//                                        fprintf(stderr, "not max\n");
-//								}
                             }
                         }
                     }
                 }
                 else
                 {
-//					if (tpbits[TCONVX] != 0)
-//					{
-//                            fprintf(stderr,"ConvexHullPoints:     skip  (" FMTX 
-//                                    "," FMTY ") as NEVER on CH\n",
-//							        testPoint->pt.x, testPoint->pt.y );
-//					}
                 }
 				
                 /*
@@ -542,13 +413,6 @@ ConvexHullPoints(struct ring *thisRing)
 			 */
             if (distPoint != (struct points *)NULL)
             {
-//				if (tpbits[TCONVX] != 0)
-//				{
-//                        fprintf(stderr,
-//                                "ConvexHullPoints:      New Convex Hull Point (" 
-//                                FMTX "," FMTY ")\n",
-//						        distPoint->pt.x, distPoint->pt.y);
-//				}
                 distPoint->chflag   = CVXHULLYS;
                 distPoint->distance = 0;
 				
@@ -604,10 +468,6 @@ ConvexHullConcave(struct ring *thisRing)
     int            convexhull = FALSE;
     int            ret        = CHPCNVEX; /* Assume it's convex */
 	
-//	if (tpbits[TCONVX] != 0)
-//	{
-//            fprintf(stderr, "ConvexHullConcave:  Starting ...\n");
-//	}
 	
     /*
 	 ** Find the first/next Concave Point after a Convex Point
@@ -661,27 +521,15 @@ ConvexHullConcave(struct ring *thisRing)
                     thisPoint = thisPoint->next;
                 }
                 endPoint = thisPoint;
-//				if (tpbits[TCONVX] != 0)
-//				{
-//                        fprintf(stderr,
-//                            "ConvexHullConcave:    Concave Section (%d)->(%d)\n", 
-//						   bgnPoint->pos, endPoint->pos);
-//				}
 				
                 /* THE NEW RING:-
 				 ** Get a new 'Ring' and slot it into the Circ List of Rings
 				 ** just after the current (AKA 'this') 'ring'
 				 */
-//				if (tpbits[TCONVX] != 0)
-//				{
-//                        fprintf(stderr, 
-//                                "ConvexHullConcave:     Add New Ring\n");
-//				}
                 if ((newRing = NewRing()) == (struct ring *)NULL)
                 {
                     return(CHPERROR);
                 }
-//                fprintf(stderr,"DEBUG: got new ring in ConvexHullConcave\n");
                 newRing->prev       = thisRing;
                 newRing->next       = thisRing->next;
                 newRing->pos        = thisRing->pos + 1;
@@ -709,11 +557,6 @@ ConvexHullConcave(struct ring *thisRing)
                 /*
 				 ** Copy the Begin and End points
 				 */
-//				if (tpbits[TCONVX] != 0)
-//				{
-//                        fprintf(stderr, 
-//                                "ConvexHullConcave:       Copy Points\n");
-//				}
                 if ((newbgnPoint = NewPoint(bgnPoint)) == (struct points *)NULL)
                 {
                     return(CHPERROR);
@@ -744,11 +587,6 @@ ConvexHullConcave(struct ring *thisRing)
                 if (newRing->opand == OPANDANDNOT ||
                     newRing->opand == OPANDOR)
                 {
-//					if (tpbits[TCONVX] != 0)
-//					{
-//                            fprintf(stderr,
-//                                "ConvexHullConcave:       Set Point Reverse\n");
-//					}
                     if (! SetPointReverse(newbgnPoint))
                     {
                         return(CHPERROR);
@@ -759,11 +597,6 @@ ConvexHullConcave(struct ring *thisRing)
 				 ** We need to reset the 'pos' counts within the new list
 				 ** And whilst we're at it, reset the chflag
 				 */
-//				if (tpbits[TCONVX] != 0)
-//				{
-//                        fprintf(stderr,
-//                            "ConvexHullConcave:       Set Point Positions\n");
-//				}
                 if (! SetPointPosition(newbgnPoint, TRUE))
                 {
                     /* !!!!! >>>> Should we issue an error message here??? */
@@ -790,12 +623,6 @@ ConvexHullConcave(struct ring *thisRing)
 				 ** Step over the 'Concave' section we just found ...
 				 ** NB 'convexhull' is therefore still 'TRUE'
 				 */
-//				if (tpbits[TCONVX] != 0)
-//				{
-//                        fprintf(stderr,
-//                            "ConvexHullConcave:   Step over Concave Segment (%2d)\n",
-//						   endPoint->pos);
-//				}
                 thisPoint = endPoint;
             }
         }
@@ -803,11 +630,6 @@ ConvexHullConcave(struct ring *thisRing)
         /*
 		 ** Step to next item
 		 */
-//		if (tpbits[TCONVX] != 0)
-//		{
-//                fprintf(stderr, "ConvexHullConcave:   Next Point (%2d)\n", 
-//                    thisPoint->next->pos);
-//		}
         thisPoint = thisPoint->next;
     }
 	
@@ -817,10 +639,6 @@ ConvexHullConcave(struct ring *thisRing)
 	 ** We need to reset the 'pos' counts within the original list of points
 	 */
     thisRing->pts = startPoint;
-//	if (tpbits[TCONVX] != 0)
-//	{
-//            fprintf(stderr, "ConvexHullConcave:       Reset Point Positions\n");
-//	}
     if (! SetPointPosition(startPoint, FALSE))
     {
         return(CHPERROR);
@@ -829,7 +647,6 @@ ConvexHullConcave(struct ring *thisRing)
      * ????? dereference of a null pointer (loaded from field 'pts') ?????
      */
     thisRing->cnt = thisRing->pts->prev->pos + 1;
-	
 	
     /*
 	 ** Let the caller know if we found any concave segments ...
@@ -840,5 +657,5 @@ ConvexHullConcave(struct ring *thisRing)
 
 /*
  ** End of File
- ** Copyright (c) 2013, 2012, 2011 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
+ ** Copyright (c) 2011-2013 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
  */

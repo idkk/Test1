@@ -1,5 +1,5 @@
 /*
- ** Copyright (c) 2013, 2012 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
+ ** Copyright (c) 2012-2013 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
  **
  ** pgcwhpolygon.c (part of pgcwhpolygon)
  ** 
@@ -17,7 +17,7 @@
  **       correct SQL "WHERE" clause. 
  */
 
-/* This file last updated 20130617:1625 */
+/* This file last updated 20130815:1200 */
 
 /*
  **  Return (exit) conditions:
@@ -99,12 +99,14 @@
 char *xcol = XCOL;
 char *ycol = YCOL;
 int  tprint = 0;
-//int  tpbits[16];
 int  maxcorners = 0;
 int  maxmaxcorners = 0;
 int  corners = 0;
 int  strict = 0;
 int  tolerance = 1;
+
+#include "cnvswap.h"
+#include "cnvendian.h"
 
 #include "pgcwhpolygon.h"
 
@@ -121,27 +123,27 @@ main (int   argc,
       char *argv[])
 {  
     int c;
-    int cmderr = 0;               /* Initialised: No errors yet    */
+    int cmderr = 0;                /* Initialised: No errors yet           */
     extern char *optarg;
     extern int optind, optopt;
-    char *ifile = (char *)NULL;   /* Input file name               */
-    char *ofile = (char *)NULL;   /* Output file name              */
-    char *rewrite = (char *)NULL; /* -R parameter value            */
-    char *strictstr = (char *)NULL; /* -S parameter value          */
-    FILE *ipf = (FILE *)NULL; /* Input file pointer                */
-    FILE *opf = (FILE *)NULL; /* Output file pointer               */
-    struct box   Box;       /* Min and Max X and Y coords          */
-	struct diamond Diamond; /* Interior, contained quadrilateral   */
-    struct ring *rings;     /* Ptr to list of Read In rings        */
+    char *ifile = (char *)NULL;    /* Input file name                      */
+    char *ofile = (char *)NULL;    /* Output file name                     */
+    char *rewrite = (char *)NULL;  /* -R parameter value                   */
+    char *strictstr = (char *)NULL; /* -S parameter value                  */
+    FILE *ipf = (FILE *)NULL;      /* Input file pointer                   */
+    FILE *opf = (FILE *)NULL;      /* Output file pointer                  */
+    struct box   Box;              /* Min and Max X and Y coords           */
+	struct diamond Diamond;        /* Interior, contained quadrilateral    */
+    struct ring *rings;            /* Ptr to list of Read In rings         */
     int defboxflag = 0;
     int boxflag    = defboxflag;
-    int ringCnt    = 0;     /* Count of number of rings found      */
-    int ret        = 0;     /* Return code                         */
-    int rew        = 0;     /* Overwrite permission - default YES  */
-	int i, j, k;            /* Work variables                      */
-    int  thisendian  = ISLITTLE;   /* Endianicty of *this* machine */
-    char temp     [NAMEMAX+1];     /* Temporary work area          */
-	char progname [NAMEMAX+1];     /* Name of *this* program       */
+    int ringCnt    = 0;            /* Count of number of rings found       */
+    int ret        = 0;            /* Return code                          */
+    int rew        = 0;            /* Overwrite permission - default YES   */
+	int i, j, k;                   /* Work variables                       */
+    int  thisendian  = LITTLE;     /* Default Endianicty of *this* machine */
+    char temp     [NAMEMAX+1];     /* Temporary work area                  */
+	char progname [NAMEMAX+1];     /* Name of *this* program               */
 	
 	char slash = '/';
 //	char dot   = '.';
@@ -169,19 +171,19 @@ main (int   argc,
 	 */
 	if (ENDIANNESS == BIG)
 	{
-		thisendian = ISBIG;
+		thisendian = BIG;
         fprintf(stderr, "INFO: This machine is BIG-endian\n");
 	}
 	else if (ENDIANNESS == LITTLE)
 	{
-		thisendian = ISLITTLE;
+		thisendian = LITTLE;
         fprintf(stderr, "INFO: This machine is LITTLE-endian\n");
 	}
 	else 
 	{
 		fprintf(stderr,
                 "ERROR: ENDIAN format of this machine not supported (%d / %x).\n",
-                endianness,endianness);
+                endianness, endianness);
 		fprintf(stderr,"[endianness first byte is %x]\n",
                 *(const char *)&endianness);
 		cmderr++;
@@ -222,18 +224,22 @@ main (int   argc,
     {
         switch(c)
         {
+            /* Input file: */
 			case 'i':
 				ifile = optarg;
 				break;
                 
+            /* Output file: */
 			case 'o':
 				ofile = optarg;
 				break;
 				
+            /* Bounding box (Y or N): */
 			case 'b':
 				boxflag = atoi(optarg);
 				break;
-                
+               
+            /* Max number of corners: */
             case 'c':
                 maxcorners = atoi(optarg);
                 if (maxcorners > maxmaxcorners)
@@ -244,6 +250,7 @@ main (int   argc,
                 }
                 break;
 				
+            /* Tolerance of corner matching: */
             case 'C':
                 tolerance = atoi(optarg);
                 if ((tolerance < 1) || (tolerance > MAXTOL))
@@ -254,20 +261,23 @@ main (int   argc,
                     cmderr++;
                 }
                 break;
-                
+               
+            /* Displacement of X column: */
 			case 'x':
 				xcol = optarg;
 				break;
                 
+            /* Displacement of Y column: */
 			case 'y':
 				ycol = optarg;
 				break;
 				
+            /* Trace/Debug flags: */
 			case 't':
 				tprint = atoi(optarg);
 				break;
                 
-                /* Permit (or not) overwriting pre-existing files: */
+            /* Permit (or not) overwriting pre-existing files: */
             case 'R':
                 rewrite = optarg;
                 /* Check argument against y/Y/n/N */
@@ -276,18 +286,21 @@ main (int   argc,
                     fprintf(stderr, "Existing files may NOT be overwritten\n");
                     rew = 0;
                 }
-                else if ((strncmp(rewrite,"n",1)==0)||(strncmp(rewrite, "N", 1)==0))
+                else if ((strncmp(rewrite,"n",1)==0)||
+                         (strncmp(rewrite, "N", 1)==0))
                 {
                     fprintf(stderr, "Existing files CAN be overwritten\n");
                     rew = 1;
                 }
                 else 
                 {
-                    fprintf(stderr, "ERROR: -R may be Y or N not %s\n",rewrite);
+                    fprintf(stderr, "ERROR: -R may be Y or N not %s\n",
+                            rewrite);
                     cmderr++;
                 }                
                 break;
                 
+            /* Strictness (Y or N): */
             case 'S':
                 strictstr = optarg;
                 if ((strncmp(strictstr, "Y", 1) == 0) ||
@@ -302,13 +315,15 @@ main (int   argc,
                 }
                 else 
                 {
-                    fprintf(stderr, "ERROR: -S (strict) may be Y or N, not %s\n",
+                    fprintf(stderr, 
+                            "ERROR: -S (strict) may be Y or N, not %s\n",
                             strictstr);
                     cmderr++;
                 }
 
                 break;
-				                
+				       
+            /* Program version display: */
             case 'v':
                 fprintf(stderr, "\n");
                 fprintf(stderr, "Program %s version: %s / %s\n",
@@ -317,37 +332,19 @@ main (int   argc,
                 fprintf(stderr, "\n");
                 break;
 				
+            /* Parameter specification error: */
 			case ':':       /* -i or -o without operand */
-				fprintf(stderr, "ERROR: Option -%c requires an operand\n", optopt);
+				fprintf(stderr, "ERROR: Option -%c requires an operand\n", 
+                        optopt);
 				cmderr++;
 				break;
                 
+            /* Unrecognized parameter - error: */
 			case '?':
 				fprintf(stderr, "ERROR: Unrecognized option: -%c\n", optopt);
 				cmderr++;
         }
     }
-	
-	/*
-	 **	Split apart the bits in tprint to make a set of idividual bits:
-	 */
-//	j = tprint;
-//	for (i=0; i<16; i++)
-//	{
-//		tpbits[i] = j % 2;
-//		j = j / 2;
-//	}
-    
-//    fprintf(stderr,"INFO: Debug/trace flags set are:\n");
-//    if (tpbits[TFILES] != 0)  fprintf(stderr,"      TFILES\n");
-//    if (tpbits[TRINGS] != 0)  fprintf(stderr,"      TRINGS\n");
-//    if (tpbits[TWHERE] != 0)  fprintf(stderr,"      TWHERE\n");
-//    if (tpbits[TCONVX] != 0)  fprintf(stderr,"      TCONVX\n");
-//    if (tpbits[TPOINT] != 0)  fprintf(stderr,"      TPOINT\n");
-//    if (tpbits[TANGLE] != 0)  fprintf(stderr,"      TANGLE\n");
-//    if (tpbits[TSORT]  != 0)  fprintf(stderr,"      TSORT\n");
-//    if (tpbits[TSTDOUT] != 0) fprintf(stderr,"      TSTDOUT\n");
-//    if (tpbits[TSTDERR] != 0) fprintf(stderr,"      TSTDERR\n");
 
 #ifdef LONGPOINT
     fprintf(stderr,"INFO: Point type is long\n");
@@ -371,7 +368,8 @@ main (int   argc,
         fprintf(stderr,"Opening [%s]\n", ifile);
         if ((ipf = fopen(ifile, "r" )) == (FILE *)NULL)
         {
-            fprintf(stderr, "ERROR: Unable to open input file (-i) [%s]\n", ifile);
+            fprintf(stderr, "ERROR: Unable to open input file (-i) [%s]\n", 
+                    ifile);
             cmderr++;
         }
     }
@@ -405,7 +403,8 @@ main (int   argc,
         fprintf(stderr,"Opening [%s]\n", ofile);
         if ((opf = fopen(ofile, "w" )) == (FILE *)NULL)
         {
-            fprintf(stderr, "ERROR: Unable to open output file (-o) [%s]\n", ofile);
+            fprintf(stderr, "ERROR: Unable to open output file (-o) [%s]\n", 
+                    ofile);
             cmderr++;
         }
     }
@@ -415,7 +414,8 @@ main (int   argc,
 	 */
     if (boxflag != 0 && boxflag != 1)
     {
-        fprintf(stderr, "ERROR: The Box Flag (-b) must be 0 or 1 (%d)\n", boxflag);
+        fprintf(stderr, "ERROR: The Box Flag (-b) must be 0 or 1 (%d)\n", 
+                boxflag);
         cmderr++;
     }
 	
@@ -450,20 +450,13 @@ main (int   argc,
 		 */
         tfclose(ipf);
         tfclose(opf);
-		
-        exit(ERROR_PARAMETERS);
+		exit(ERROR_PARAMETERS);
     }
 	
     /*
 	 ** Here We Go >>>
 	 */
     fprintf(stderr,"\n");
-//	if (tpbits[TFILES] != 0)
-//	{
-//            fprintf(stderr,"Reading Coord Data from CSV [%s]\n", ifile);
-//            fprintf(stderr,"Writing WHERE Clause to SQL [%s]\n", ofile);
-//            fprintf(stderr,"\n");
-//	}
     /*
      ** Set the outermost Box and Diamond to impossible values:
      */
@@ -490,72 +483,21 @@ main (int   argc,
         
         exit(FAIL_READ_RINGS);
     }
-	
-//    fprintf(stderr,"DEBUG: in main corners=%d maxcorners=%d\n",corners,maxcorners);
-    /*
-	 ** Let's see the Box
-	 */
-//    if (tpbits[TORING] != 0)
-//    {
-//        fprintf(stderr,"INFO: outermost ring box=\n");
-//        ShowBox(&rings->ringbox);
-	
-        /*
-         **  and let's see the Diamond too:
-         */
-//        fprintf(stderr,"INFO: outermost ring diamond=\n");
-//        ShowDiamond(&rings->ringdiamond);
-        /*
-         ** and the same for the bounding box and diamond:
-         */
-//        fprintf(stderr,"INFO: bounding box=\n");
-//        ShowBox(&Box);
-//        fprintf(stderr,"INFO: bounding diamond=\n");
-//        ShowDiamond(&Diamond);
-//    }
     
 	    
     /*
 	 ** Done with the Input File now, so we can close it, but check it is open!
 	 */
     tfclose(ipf);
-
-//	if (tpbits[TSORT] != 0)
-//	{
-//            fprintf(stderr,"Constructing ring nesting structures\n");
-//            fprintf(stderr,"\n");
-//	}
     
     /*
 	 ** Sort the Rings so 'rings-within-rings' are suitably concentric ordered
 	 */
 	/*
-	 ** IDKK: I *think* we need to find the convex hulls and *then* order the rings
+	 ** IDKK: I *think* we need to find the convex hulls and *then* order the 
+     **       rings
 	 */
     ringCnt = rings->prev->pos + 1;
-//    if (ringCnt > 1)
-//    {
-//		if (tpbits[TRINGS] != 0)
-//		{
-//                fprintf(stderr,"Found (%d) Rings: Sorting ...\n", ringCnt);
-//                fprintf(stderr,"WARNING: Concentric Rings Not Yet Supported\n");
-//		}
-//    }
-//    else
-//    {
-//		if (tpbits[TRINGS] != 0)
-//		{
-//                fprintf(stderr,"Found (%d) Ring: No Sorting Required\n", ringCnt);
-//		}
-//    }
-	
-//    if (tpbits[THULL] != 0)
-//    {
-//        fprintf(stderr, "INFO: Before building convex hull, bounding box is...\n");
-//        ShowBox(&Box);
-//        fprintf(stderr, "      ... and the bounding ring box is...\n");
-//        ShowBox(&rings->ringbox);
-//    }
     /*
 	 ** Build the Convex Hull Rings
 	 */
@@ -565,12 +507,6 @@ main (int   argc,
         
         exit(FAIL_BUILD_CONVEX_HULL);
     }
-//    if (tpbits[THULL] != 0)
-//    {
-//        fprintf(stderr, "INFO: After building convex hull, outer box is...\n");
-        //        ShowBox(&Box);
-//        ShowBox(&rings->ringbox);
-//    }	
 	/*
 	 ** Now determine the nesting of the rings, if there is more than one ring:
 	 ** NOTE that this is incompatible with the warning issued just above of our
@@ -579,10 +515,6 @@ main (int   argc,
 	 */
 	if (ringCnt > 1)
 	{
-//		if (tpbits[TRINGS] != 0)
-//		{
-//                fprintf(stderr,"Found (%d) rings - nesting\n",ringCnt);
-//		}
 		/*
          **  Ensure that each ring has a good box and diamond - thisis achieved
          **  within routine setBoxDiamond, which runs round every ring.
@@ -599,32 +531,20 @@ main (int   argc,
 		 */
 		if (nesting == (int *)NULL)
 		{
-			fprintf(stderr,"ERROR: No memory for nesting calculation.\n");
+			fprintf(stderr, "ERROR: No memory for nesting calculation.\n");
 			exit(FAIL_GET_MEMORY_1);		
 		}
 	}
 	else 
 	{
-//		if (tpbits[TRINGS] != 0)
-//		{
-//                fprintf(stderr,"Only (%d) rings - no nesting\n",ringCnt);
-//		}
 	}
 
     /*
 	 ** Build the Box Where Clause
 	 **   and remember we did it in the first ring
 	 */
-//    if (tpbits[TBWHERE] != 0)
-//    {
-//        fprintf(stderr, "INFO: Prior to BuildWhereBox, bounding Box is....\n");
-//        ShowBox(&Box);
-//        fprintf(stderr, "      ... and outer ring box is....\n");
-//        ShowBox(&rings->ringbox);
-//    }
     if (boxflag == 0)
     {
-//        fprintf(stderr, "DEBUG: About to build wherebox from bounding box=\n");
         ShowBox(&Box);
         BuildWhereBox(&opf, &Box);
         rings->opand = OPANDAND;
@@ -633,11 +553,6 @@ main (int   argc,
     /*
 	 ** Build the WHERE Clause(s) from the Rings
 	 */
-//	if (tpbits[TWHERE] != 0)
-//	{
-//            fprintf(stderr,"Building WHERE Clause of SQL\n");
-//            fprintf(stderr,"\n");
-//	}
     
 	/* !!!! TODO This can be altered to use the nesting information */
     if ((ret = BuildWhereRing(&opf, rings)) != 0)
@@ -681,67 +596,9 @@ int tfclose (FILE *filep)
     }
 }
 
-/*
- **! Byte swap unsigned short
- */
-uint16_t swap_uint16( uint16_t val ) 
-{
-	return (val << 8) | (val >> 8 );
-}
-
-
-/*
- **! Byte swap short
- */
-int16_t swap_int16( int16_t val ) 
-{
-	return (val << 8) | ((val >> 8) & 0xFF);
-}
-
-/*
- **! Byte swap unsigned int
- */
-uint32_t swap_uint32( uint32_t val )
-{
-	val = ((val << 8) & 0xFF00FF00 ) | ((val >> 8) & 0xFF00FF ); 
-	return (val << 16) | (val >> 16);
-}
-
-
-/*
- **! Byte swap int
- */
-int32_t swap_int32( int32_t val )
-{
-    val = ((val << 8) & 0xFF00FF00) | ((val >> 8) & 0xFF00FF ); 
-    return (val << 16) | ((val >> 16) & 0xFFFF);
-}
-
-/*
- ** unswap using char pointers
- */
-double swap_double(unsigned long long a) 
-{
-	
-    double d;
-    unsigned char *src = (unsigned char *)&a;
-    unsigned char *dst = (unsigned char *)&d;
-	
-    dst[0] = src[7];
-    dst[1] = src[6];
-    dst[2] = src[5];
-    dst[3] = src[4];
-    dst[4] = src[3];
-    dst[5] = src[2];
-    dst[6] = src[1];
-    dst[7] = src[0];
-	
-    return d;
-}
-
 
 /*
  ** End of File
- ** Copyright (c) 2013, 2012 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
+ ** Copyright (c) 2012-2013 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
  */
 

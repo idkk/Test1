@@ -1,5 +1,5 @@
 /*
- ** Copyright (c) 2013, 2012, 2011 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
+ ** Copyright (c) 2011-2013 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
  **
  ** pgcwhpolypoint.c (part of pgcwhpolygon)
  ** 
@@ -15,7 +15,7 @@
  **       the order required for generating the correct SQL "WHERE" clause. 
  */
 
-/* This file last updated 20130617:1645 */
+/* This file last updated 20130815:1340 */
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -28,6 +28,8 @@
 #include <limits.h>
 #include <math.h>         /* for sqrt()      */
 
+#include "cnvswap.h"
+#include "cnvendian.h"
 #include "pgcwhpolygon.h"
 
 
@@ -50,7 +52,6 @@ NewPoint(struct points *oldPoint)
      **  Check that this new point does not go over the maximum number of
      **  corners allowed. If it does, then error exit:
      */
-//    fprintf(stderr,"DEBUG: NewPoint corners=%d maxcorners=%d\n",corners,maxcorners);
     corners++;
     if (corners > maxcorners)
     {
@@ -189,11 +190,6 @@ GetPoints(FILE       **fp,
         if (cnt != 0 && 
             firstPoint != nextPoint && readX == firstX && readY == firstY)
         {
-//			if (tpbits[TPOINT] != 0)
-//			{
-//                    fprintf(stderr,"GetPoints(%2d)   Found end of 'ring'\n", 
-//                            cnt);
-//			}
 			
             break;
         }
@@ -201,10 +197,6 @@ GetPoints(FILE       **fp,
         /*
 		 ** Grab a new 'point'
 		 */
-//		if (tpbits[TPOINT] != 0)
-//		{
-//                fprintf(stderr,"GetPoints(%2d)   Get New Point\n", cnt);
-//		}
         if ((nextPoint = NewPoint((struct points *)NULL)) ==
 			(struct points *)NULL)
         {
@@ -214,16 +206,8 @@ GetPoints(FILE       **fp,
         /*
 		 ** Populate the new 'points'
 		 */
-//		if (tpbits[TPOINT] != 0)
-//		{
-//                fprintf(stderr,"GetPoints(%2d)   Populate\n", cnt);
-//		}
         if (firstPoint == (struct points *)NULL)
         {
-//			if (tpbits[TPOINT] != 0)
-//			{
-//                    fprintf(stderr,"GetPoints(%2d)     First Point\n", cnt);
-//			}
 			
             firstPoint = nextPoint;   /* Remember the First Point */
 			
@@ -235,11 +219,6 @@ GetPoints(FILE       **fp,
         }
         else
         {
-//			if (tpbits[TPOINT] != 0)
-//			{
-//                    fprintf(stderr,"GetPoints(%2d)     Subsequent Points\n", 
-//                            cnt);
-//			}
 			
             /*
 			 ** Insert _next_ 'points' into circular linked list just after
@@ -255,11 +234,6 @@ GetPoints(FILE       **fp,
             thisPoint->next = nextPoint;
             nextPoint->prev = thisPoint;
         }
-//		if (tpbits[TPOINT] != 0)
-//		{
-//                fprintf(stderr,"GetPoints(%2d)     Set X,Y (" FMTX "," FMTY 
-//                        ")\n", cnt, readX, readY);
-//		}
         nextPoint->pt.x = readX;
         nextPoint->pt.y = readY;
         nextPoint->pos  = cnt;
@@ -274,10 +248,12 @@ GetPoints(FILE       **fp,
             if ((abs(prevX - nextPoint->pt.x) < tolerance) ||
                 (abs(prevY - nextPoint->pt.y) < tolerance))
             {
-                fprintf(stderr, "ERROR: This point (%d, %d) is within tolerance (%d)\n"
-                        "       of previous point (%d, %d)\n"
-                        "       Run terminates\n", nextPoint->pt.x, nextPoint->pt.y,
-                        tolerance, prevX, prevY);
+                fprintf(stderr, 
+                        "ERROR: This point (" FMTX ", " FMTY 
+                        ") is within tolerance (%d)\n"
+                        "       of previous point (" FMTX ", " FMTY ")\n"
+                        "       Run terminates\n", nextPoint->pt.x, 
+                        nextPoint->pt.y, tolerance, prevX, prevY);
                 exit(FAIL_STRICT2);
             }
         }
@@ -302,10 +278,6 @@ GetPoints(FILE       **fp,
         /*
 		 ** Grab the next pair of Coords
 		 */
-//		if (tpbits[TPOINT] != 0)
-//		{
-//                fprintf(stderr,"GetPoints(%2d) Read Point\n", cnt);
-//		}
 		if (fscanf(*fp, FMTX ", " FMTY "\n", &readX, &readY) == 0)
         {
             fprintf(stderr, "ERROR: (%d): Failed to read next pair of Coords\n", 
@@ -313,24 +285,11 @@ GetPoints(FILE       **fp,
 			
             return((struct points *)NULL);
         }
-//		if (tpbits[TPOINT] != 0)
-//		{
-//                fprintf(stderr,"GetPoints(%2d) Read X(" FMTX ") Y(" FMTY ")\n", 
-//                    cnt, readX, readY);
-//		}
 		
 		/*
 		 * We have just got the coordinates of another point on this ring,
 		 * so now we can update the ring box and the diamond for this ring.
 		 */ 
-//        if (tpbits[TPOINT] != 0)
-//        {
-//            fprintf(stderr,"DEBUG: Got point (" FMTX "," FMTY 
-//                "), comparing against ring box=\n",readX,readY);
-//            ShowBox(Box);
-//            fprintf(stderr,"       and against outer box=\n");
-//            ShowBox(outerBox);
-//        }
 		if (readX < Box->min.x)
 		{
 			Box->min.x = readX;
@@ -392,22 +351,12 @@ GetPoints(FILE       **fp,
 	 */
     SetPointsAngle(thisPoint);       /* last point in the ring  */
     SetPointsAngle(thisPoint->next); /* first point in the ring */
-//	if (tpbits[TPOINT] != 0)
-//	{
-//            fprintf(stderr,"       Last Angle = %f Adjusted\n", thisPoint->angle);
-//            fprintf(stderr,"       Frst Angle = %f Adjusted\n", 
-//                thisPoint->next->angle);
-//	}
 	
     /*
 	 ** Let's see what we just read ...
 	 */
     ShowPoints(firstPoint);
 	
-//	if (tpbits[TPOINT] != 0)
-//	{
-//            fprintf(stderr,"Found %d points in this 'ring'\n", cnt);
-//	}
     return(firstPoint);
 }
 
@@ -454,8 +403,7 @@ SetPointReverse(struct points *startPoint)
         if (thisPoint->next == (struct points *)NULL)
         {
             fprintf(stderr, "          **** Circle Incomplete ****\n");
-            thisPoint = startPoint;  /* Force Premature Exit */
-			
+            thisPoint = startPoint;  /* Force Premature Exit */			
             ret = FALSE;
             break;
         }
@@ -507,16 +455,7 @@ SetPointPosition(struct points *startPoint,
         {
             thisPoint = startPoint;
         }
-//		if (tpbits[TPOINT] != 0)
-//		{
-//                fprintf(stderr,"SetPointPosition:          Old Pos (%2d)", 
-//                    thisPoint->pos);
-//		}
         thisPoint->pos = pos++;
-//		if (tpbits[TPOINT] != 0)
-//		{
-//                fprintf(stderr," becomes New Pos (%2d)\n", thisPoint->pos);
-//		}
 		
         /*
 		 ** If asked, we reset the chflag too
@@ -534,8 +473,7 @@ SetPointPosition(struct points *startPoint,
         if (thisPoint->next == (struct points *)NULL)
         {
             fprintf(stderr, "          **** Circle Incomplete ****\n");
-            thisPoint = startPoint;  /* Force Premature Exit */
-			
+            thisPoint = startPoint;  /* Force Premature Exit */			
             ret = FALSE;
             break;
         }
@@ -591,12 +529,14 @@ BuildWherePoints(FILE        **fp,
 			 */
             fprintf(*fp, "  AND (");
             break;
+            
         case OPANDOR:                /* OR      WHERE Clause */
 			/*
 			 fprintf(*fp, "     )   -- End previous clause\n");
 			 */
             fprintf(*fp, "   OR (");
             break;
+            
         case OPANDANDNOT:            /* AND NOT WHERE Clause */
 			/*
 			 fprintf(*fp, "     )   -- End previous clause\n");
@@ -618,10 +558,6 @@ BuildWherePoints(FILE        **fp,
     /*
 	 ** For each Polygon 'line' in the circular linked list
 	 */
-//	if (tpbits[TWHERE] != 0)
-//	{
-//            fprintf(stderr,"  Build WHERE (line)\n"); 
-//	}
     while (thisPoint != startPoint)
     {
         /*
@@ -648,10 +584,13 @@ BuildWherePoints(FILE        **fp,
         {
             if ((abs(xDiff) < tolerance) || (abs(yDiff) < tolerance))
             {
-                fprintf(stderr, "ERROR: This point (%d, %d) is within tolerance (%d)\n"
-                        "       of next point (%d, %d)\n"
-                        "       Run terminates", thisPoint->pt.x, thisPoint->pt.y,
-                        tolerance, thisPoint->next->pt.x, thisPoint->next->pt.y);
+                fprintf(stderr, 
+                        "ERROR: This point (" FMTX ", " FMTY 
+                        ") is within tolerance (%d)\n"
+                        "       of next point (" FMTX ", " FMTY ")\n"
+                        "       Run terminates", 
+                        thisPoint->pt.x, thisPoint->pt.y, tolerance, 
+                        thisPoint->next->pt.x, thisPoint->next->pt.y);
                 exit(FAIL_STRICT3);
             }
         }
@@ -802,10 +741,6 @@ SetPointsAngle(struct points *thisPoint)
     }
     else              /* On The Line : ERROR */
     {
-//		if (tpbits[TANGLE] != 0)
-//		{
-//                fprintf(stderr,"Warning: Straight Line Detected\n");
-//		}
         EAng = 0;
     }
 	
@@ -817,34 +752,6 @@ SetPointsAngle(struct points *thisPoint)
     /*
 	 ** Display the calculation information :-
 	 */
-//	if (tpbits[TANGLE] != 0)
-//	{
-//		fprintf(stderr,"\n");
-//		fprintf(stderr,"   Calculate Angle for Corner %d\n", thisPoint->pos);
-//		fprintf(stderr,"     Original Points\n");
-//		fprintf(stderr,"       X,Ya, " FMTX ", " FMTY "\n", prevPoint->pt.x, 
-//                prevPoint->pt.y);
-//		fprintf(stderr,"       X,Yb, " FMTX ", " FMTY "\n", thisPoint->pt.x, 
-//                thisPoint->pt.y);
-//		fprintf(stderr,"       X,Yc, " FMTX ", " FMTY "\n", nextPoint->pt.x, 
-//                nextPoint->pt.y);
-//		fprintf(stderr,"     Move to Origin Points\n");
-//		fprintf(stderr,"       X,Y2a, %.0f, %.0f\n", X2a, Y2a);
-//		fprintf(stderr,"       X,Y2b, %.0f, %.0f\n", X2b, Y2b);
-//		fprintf(stderr,"       X,Y2c, %.0f, %.0f\n", X2c, Y2c);
-//		fprintf(stderr,"     Rotate to X-Axis Points  cos(%.3f) sin(%.3f)\n", 
-//                cos, sin);
-//		fprintf(stderr,"       X,Y3a, %.3f, %.3f\n", X3a, Y3a);
-//		fprintf(stderr,"       X,Y3b, %.3f, %.3f\n", X3b, Y3b);
-//		fprintf(stderr,"       X,Y3c, %.3f, %.3f\n", X3c, Y3c);
-//		fprintf(stderr,"     Calculate the Angle ...\n");
-//		fprintf(stderr,"       hyp   = %.3f\n", hyp);
-//		fprintf(stderr,"       adj   = %.3f\n", adj);
-//		fprintf(stderr,"       Cabc  = %.3f\n", Cabc);
-//		fprintf(stderr,"       Angle = %.3f\n", Ang);
-//		fprintf(stderr,"       Angle = %.3f Adjusted\n", thisPoint->angle);
-//		fprintf(stderr,"\n");
-//	}
 	
     /* 
 	 ** At the start of the computation we have:
@@ -888,7 +795,7 @@ PointLine(struct point *lineStart, struct point *lineEnd, struct point *pointTes
 	/*
 	 ** Move the origin ...
 	 */
-    float X2b = (float)(lineEnd->x - lineStart->x); /* new line end */
+    float X2b = (float)(lineEnd->x - lineStart->x);   /* new line end */
     float Y2b = (float)(lineEnd->y - lineStart->y);
     float X2c = (float)(pointTest->x - lineStart->x); /* new test point */
     float Y2c = (float)(pointTest->y - lineStart->y);
@@ -896,7 +803,7 @@ PointLine(struct point *lineStart, struct point *lineEnd, struct point *pointTes
     /*
 	 ** Rotate the axes ...
 	 */
-    float X3b = sqrtf((X2b * X2b) + (Y2b * Y2b)); /* new line end */
+    float X3b = sqrtf((X2b * X2b) + (Y2b * Y2b));     /* new line end */
     float cos = X2b / X3b;            /* CAH: Cos = Adjacent / Hypotenuse */
     float sin = Y2b / X3b;            /* SOH: Sin = Opposite / Hypotenuse */
     float Y3c = (cos * Y2c) - (sin * X2c);
@@ -938,10 +845,6 @@ ShowPoints(struct points *startPoint)
     /*
 	 ** For each 'points' in the circular linked list
 	 */
-//	if (tpbits[TPOINT] != 0)
-//	{
-//            fprintf(stderr,"Display Points:-\n");
-//	}
     while (thisPoint != startPoint)
     {
         /*
@@ -951,25 +854,11 @@ ShowPoints(struct points *startPoint)
         if (thisPoint == (struct points *)NULL)
         {
             thisPoint = startPoint;
-//			if (tpbits[TPOINT] != 0)
-//			{
-//				fprintf(stderr,"    Pos  CH  (  X   ,  Y   )  Angle  (deg)\n");
-//			}
         }
 		
         /*
 		 ** Print out the info
 		 */
-//		if (tpbits[TPOINT] != 0)
-//		{
-//			fprintf(stderr,"    (%2d) (%d) (" FMTX "," FMTY ") %s%.3f %s%.3f\n",
-//                   thisPoint->pos,
-//                   thisPoint->chflag,
-//                   thisPoint->pt.x, thisPoint->pt.y,
-//                   thisPoint->angle >= 0 ? " " : "", thisPoint->angle,
-//                   thisPoint->angle >= 0 ? " " : "", thisPoint->angle * RADDEG); 
-            /* NOTE: RADDEG = 180/pi */
-//		}
 		
         angleTot = angleTot + thisPoint->angle;
 		
@@ -979,10 +868,6 @@ ShowPoints(struct points *startPoint)
 		 */
         if (thisPoint->next == (struct points *)NULL)
         {
-//			if (tpbits[TPOINT] != 0)
-//			{
-//                    fprintf(stderr,"          **** Circle Incomplete ****\n");
-//			}
             thisPoint = startPoint;  /* Force Premature Exit */
         }
         else
@@ -991,10 +876,6 @@ ShowPoints(struct points *startPoint)
         }
     }
 	
-//	if (tpbits[TPOINT] != 0)
-//	{
-//            fprintf(stderr,"                     Total/2: %.3f\n", angleTot / 2);
-//	}
 }
 
 
@@ -1012,11 +893,6 @@ void
 BuildWhereBox(FILE       **fp,
               struct box  *Box)
 {
-//	if (tpbits[TWHERE] != 0)
-//	{
-//            fprintf(stderr, "Build WHERE (box)\n"); 
-//        ShowBox(Box);
-//	}
     fprintf(*fp, "FROM  ??trace_RCD\n");
     fprintf(*fp, "WHERE -- Only points within the Box\n");
 	fprintf(*fp, "      (%s >= " FMTX " AND %s <= " FMTY " AND\n",
@@ -1074,5 +950,5 @@ ShowDiamond(struct diamond *Diamond)
 
 /*
  ** End of File
- ** Copyright (c) 2013, 2012, 2011 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
+ ** Copyright (c) 2011-2013 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
  */

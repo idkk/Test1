@@ -3,12 +3,16 @@
  *  (seg2sth.h
  *   SEG2STH)
  *
- *  MASTER Created by Ian Kelly on 21/05/2012.
- *  Copyright 2013, 2012 Westheimer Energy Consulting Ltd. All rights reserved.
+ *  Created by Ian Kelly on 21/05/2012.
+ *  Copyright 2012-2013 Westheimer Energy Consulting Ltd. All rights reserved.
  * 
  */
-#define SEGVERSION "0.992"
-#define SEGDATE  "3 June 2013:10.30"
+
+#ifndef CNVSEG2STH
+#define CNVSEG2STH
+
+#define SEGVERSION "1.000"
+#define SEGDATE  "9 October 2013:13.00"
 
 /* 
  *  The following definition for TEST_FLOAT_OVERFLOW is required only if we
@@ -95,45 +99,32 @@
 
 /*
  *  The following constants may be used by the IEEE-IBM conversions:
+ *  Note that some of these constants are not used and are commented out -
+ *  Please do not remove these comments, as these values may be used in later
+ *  versions of this code (Version 0.994)
  */
 #define NOCONVERT       0
 #define CIBM2IEEE       1
 #define CIEEE2IBM       2
 #define CIEEE2BOTH      3
 #define CIBM2BOTH       4
-#define CIBMINPUT       -1
-#define CIEEEINPUT      -2
-#define CIBMINPUTB      -3
+//#define CIBMINPUT       -1
+//#define CIEEEINPUT      -2
+//#define CIBMINPUTB      -3
 #define CIBM            -1
 #define CIEEE           -2
 #define CBOTH           -3
-#define IBM_SIGN        0x80000000U
-#define IBM_EXPONENT    0x7f000000U
-#define IBM_MANTISSA    0x00ffffffU
-#define IEEE_SIGN       0x80000000U
-#define IEEE_EXPONENT   0x7f800000U
-#define IEEE_MANTISSA   0x007fffffU
-#define IEEE_HIDDEN_BIT 0x00800000U
-#define IEEE32_BIAS     127
-#define IBM_32_BIAS     64
+//#define IBM_SIGN        0x80000000U
+//#define IBM_EXPONENT    0x7f000000U
+//#define IBM_MANTISSA    0x00ffffffU
+//#define IEEE_SIGN       0x80000000U
+//#define IEEE_EXPONENT   0x7f800000U
+//#define IEEE_MANTISSA   0x007fffffU
+//#define IEEE_HIDDEN_BIT 0x00800000U
+//#define IEEE32_BIAS     127
+//#define IBM_32_BIAS     64
 
 #define MAXP     6
-
-/*
- *  The following definitions must match the native lengths of the types
- *  in the native machine. This avoids the body of the bulk of the code making
- *  any assumptions as to the number of bits in a long or an int etc.
- *  The four types declared here are for 16-bit ints, and for 32-bit ints,
- *  both signed and unsigned:
- */
-#define int16_t    short int
-#define uint16_t   unsigned short int
-#define int32_t    int
-#define uint32_t   unsigned int
-/*
- *  And below we have a 32-bit float:
- */
-#define float32_t  float
 
 /*
  *  Exit codes for the program:
@@ -200,61 +191,8 @@
 
 /* Forward declaration of procedures: */
 int         tfclose     (FILE  *a);
-int16_t		swap_int16	(int16_t a);
-uint16_t	swap_uint16 (uint16_t a);
-int32_t		swap_int32	(int32_t a);
-uint32_t	swap_uint32	(uint32_t a);
-double      swap_double (unsigned long long a);
-void ieee2ibm(void *to, const void *from, int len);
-void ibm2ieee(void *to, const void *from, int len);
 
-/* 32-bit Endian definition of *this* machine: */
-/*
- * Note that this definition can be
- * (a) extended to cover other formats, such as PDP (0xad), and
- * (b) altered to err at compile time if the format is not
- *     recognised (remove UNDEFINED and uncomment the assert)
- */
-static uint32_t endianness = 0xdeadbeef; 
-enum TENDIANNESS { BIG, LITTLE, UNDEFINED };
-
-#define ENDIANNESS ( *(const char *)&endianness == (char) 0xef ? LITTLE \
-: *(const char *)&endianness == (char) 0xde ? BIG \
-: UNDEFINED )
-// : assert(0))
-/*
- * This is tested by (for example):
- *   if (ENDIANNESS == BIG)...
- */
-
-/* Alternative definition of endianness: (NOT yet used in vn. 0.954) */
-// #ifndef ORDER32_H
-// #define ORDER32_H
-
-// #include <limits.h>
-// #include <stdint.h>
-
-// #if CHAR_BIT != 8
-// #error "unsupported char size"
-// #endif
-
-// enum
-// {
-//    O32_LITTLE_ENDIAN = 0x03020100ul,
-//    O32_BIG_ENDIAN = 0x00010203ul,
-//    O32_PDP_ENDIAN = 0x01000302ul
-//};
-
-// static const union { unsigned char bytes[4]; uint32_t value; } o32_host_order =
-// { { 0, 1, 2, 3 } };
-
-// #define O32_HOST_ORDER (o32_host_order.value)
-/*
- *  This is tested by (for example)
- *   if (O32_HOST_ORDER == O32_LITTLE_ENDIAN) ...
- */
-
-// #endif
+#endif
 
 
 /*******************************************************************************

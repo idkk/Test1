@@ -3,7 +3,7 @@
  *  Copyright 2013 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
  ******************************************************************************/
 
-/* This file last updated 20130608:1145 */
+/* This file last updated 20130916:1150 */
 
 /*
  *  This program reads three streams of input, and constructs several streams
@@ -162,6 +162,10 @@
  *                 Verify generated filenames are within numeric range
  *                 Implement -R parameter to test overwriting permission
  *
+ *   0.56/0.57     a) only filenames, not directories
+ *                 b) .sgy added to filenames
+ *                 c) correction of big/little-endian bug in filename building
+ *                 d) correct splitting of Timeslice output
  */
 
 /*
@@ -183,6 +187,10 @@
 #include <fcntl.h>
 #include <math.h>         /* for sqrt()      */
 
+#include "cnvswap.h"
+#include "cnvendian.h"
+#include "cnvfloat.h"
+#include "cnvsegyfmt.h"
 #include "cnvsth2seg.h"
 
 #define DEBUG_LEV 0
@@ -232,10 +240,9 @@ int main (int argc, char * argv[])
     char *Xstr     =  (char *)NULL;  /* -X parameter value              */
     char *rewrite  =  (char *)NULL;  /* -R parameter value              */
     int   noutputfiles = MAXOUTFILES;/* Number of output files to generate    */
-    int   currentfile = 0;           /* File number now being generated       */
     int   firstsample = 0;           /* Displacement of first data sample     */
     int   samplestep = 1;            /* Step size in units between samples    */
-    int   TH_ONE = 1;                /* Big-endian value one for TH o/p */
+//    int   TH_ONE = 1;                /* Big-endian value one for TH o/p */
     int   fnameD[MAXOUTFILES];       /* Detailed otput file name suffix values*/
     int   sliceform = 0;             /* Type of slicing to be done (if any)  */
     
@@ -245,7 +252,7 @@ int main (int argc, char * argv[])
     char  work16[16];                /* Work array - temporary strings        */
     int   w4;
     char  *pw4 = (char *)&w4;
-    int   thisendian  = ISLITTLE;    /* Endianicty of *this* machine          */
+    int   thisendian  = LITTLE;      /* Default Endianicty of *this* machine  */
     int   cmderr = 0;                /* Command error indicator - default OK  */
     int   i, j, k, l;                /* Work variables                        */
     unsigned short m, n;             /* Work variables                        */
@@ -253,25 +260,27 @@ int main (int argc, char * argv[])
     int   tprint = 0;                /* Debug trace indicator - default none  */
     int   TraceEnd = 0;              /* Indicate end of Trace Header input    */
     int   TraceCount = 0;            /* Count of Trace (and data) records read*/
+    int   FHlength1 = LEN_FH;        /* Length of a singe File Header         */
     int   FHlength = 0;              /* Length of File Header written         */
+    int   THlength1 = LEN_TH;        /* Length of a single Trace Header       */
     int   THlength = 0;              /* Total length of all Trace Headers out */
     int   TDlength = 0;              /* Total length of all data written      */
     int   iFHlength = 0;             /* Length of File Header read            */
     int   iTHlength = 0;             /* Total length of all Trace Headers IN  */
     int   iTDlength = 0;             /* Total length of all data read         */
-//    int   RecordLength = 0;          /* Length of this TD record in bytes     */
     int   CountFilesIn = 3;          /* Number of input files expected 1/2/3  */ 
     int   ExtraTH = 0;               /* Extra bytes in TH record above LEN_TH */
     int   ThisCross = 0;             /* Crossline number for this line        */
     int   ThisIn = 0;                /* Inline number for this line           */
     int   PrevCross = -1;            /* Crossline number for previous line    */
     int   PrevIn = -1;               /* Inline number for previous line       */
+    int   ThisTime = 0;              /* Timeline number for this line         */
+    int   PrevTime = -1;             /* Timeline number for previous line     */
     int   disp_inline = 188;         /* Default displacement INline in TH     */
     int   disp_crossline = 192;      /* Defaule displacement CROSSline in TH  */
     int   len_inline = 4;            /* Length of INline field, in bytes      */
     int   len_crossline = 4;         /* Length of CROSSline field, in bytes   */
     unsigned short nauxfh = 0;       /* Number of Auxiliary File Headers      */
-//    unsigned short maxnaux = 0;      /* Permanent count of no. of aux FH recs */
     unsigned short nsamplesFH = 0;   /* Number of samples, from File Header   */
     unsigned short nsamplesTH = 0;   /* Number of samples, from Trace Header  */
     int   usensamplesTH = 0;         /* nsamplesTH correct for program limits */
@@ -294,7 +303,9 @@ int main (int argc, char * argv[])
     int   ReadLength = 0;            /* Size of data record to read, in bytes */
     int   WriteLength = 0;           /* Size of data record to write, bytes   */
     int   rew = 0;                   /* Do (0) / Do not (1) allow overwrite   */ 
-//    int   UseDataLength = 1;         /* Use TD leading word to find length    */
+    int   SafeTime = 0;              /* If nonzero, do not check time range   */
+    int   SafeCross = 0;             /* If nonzero, do not check cross range  */
+    int   SafeIn = 0;                /* If nonzero, do not check inine range  */
     int   SkipReadData = 0;          /* Debug trace - skip reading TD data    */
     int   TotalSamples = 0;          /* Debug trace - total number of samples */
     int   TotalSamplesFH = 0;        /* Debug trace - samples as per FH rec.  */
@@ -305,7 +316,7 @@ int main (int argc, char * argv[])
     short LOBlength2 = 0;            /* Two-byte version of LOBlength         */
     short floatconvert = NOCONVERT;  /* Floating point conversion flag        */
     char  cLOBlength4[4];            /* Splittable version of (2+2) LOB count */
-    long int LOBlength64 = 0;        /* 64-bit version of LOBlength           */
+//    long int LOBlength64 = 0;        /* 64-bit version of LOBlength           */
     char  FmtRevNo[2];               /* Format Revision Number of SEGY input  */
     
     /*
@@ -347,11 +358,13 @@ int main (int argc, char * argv[])
 	 */
 	if (ENDIANNESS == BIG)
 	{
-		thisendian = ISBIG;
+		thisendian = BIG;
+        fprintf(stderr, "INFO: This machine is BIG-endian.\n");
 	}
 	else if (ENDIANNESS == LITTLE)
 	{
-		thisendian = ISLITTLE;
+		thisendian = LITTLE;
+        fprintf(stderr, "INFO: This machine is LITTLE-endian.\n");
 	}
 	else 
 	{
@@ -367,10 +380,10 @@ int main (int argc, char * argv[])
      *  If the endianness of this machine is LITTLE then correct the TH_ONE to
      *  contain a big-endian value one:
      */
-    if (ENDIANNESS == LITTLE)
-    {
-        TH_ONE = swap_int32(TH_ONE);
-    }
+//    if (ENDIANNESS == LITTLE)
+//    {
+//        TH_ONE = swap_int32(TH_ONE);
+//    }
 	
     /*  Output file pointers to NULL as initial values: */
     for (i=0; (i<MAXOUTFILES); i++)
@@ -418,14 +431,35 @@ int main (int argc, char * argv[])
     UseFHsamp = 0;
     UseTHsamp = 0;
     
-    while ((c = getopt(argc, argv, ":n:P:B:S:E:I:X:h:r:i:o:f:t:d:D:T:F:e:O:R:vus")) != -1)
+    while ((c = getopt(argc, argv, ":n:P:B:S:E:I:X:h:r:i:o:f:t:d:D:T:F:e:O:R:lAGCvus")) != -1)
     {
         switch(c)
         {
-                /* Number of output files: */
+            /* Use FH sample count throughout: */
+            case 'l':
+                UseFHsamp = 1;
+                break;
+                
+            /* Unsafe - do not test inline range: */
+            case 'A':
+                SafeIn = 1;
+                break;
+                
+            /* Unsafe - do not test crossline range: */
+            case 'G':
+                SafeCross = 1;
+                break;
+                
+            /* Unsafe - do not test timeline range: */
+            case 'C':
+                SafeTime = 1;
+                break;
+                
+            /* Number of output files: */
             case 'n':
                 nstr = optarg;
                 i = atoi(nstr);
+                noutputfiles = i;
                 if ((i<1) || (i>MAXOUTFILES))
                 {
                     fprintf(stderr, 
@@ -433,14 +467,9 @@ int main (int argc, char * argv[])
                             MAXOUTFILES, i);
                     cmderr++;
                 }
-                else 
-                {
-                    noutputfiles = i;
-                }
-
                 break;
                 
-                /* Type of slicing - if any - being done by this program */
+            /* Type of slicing - if any - being done by this program */
             case 'P':
                 slicetype = optarg;
                 /*
@@ -489,31 +518,37 @@ int main (int argc, char * argv[])
                 }
                 break;
                 
-                /* Displacement of INline in THrec: */
+            /* Displacement of INline in THrec: */
             case 'I':
                 Istr = optarg;
-                disp_inline = atoi(Istr);
+                /* The -I parameter is as Column Number - subtract one to get
+                 * the Displacement:
+                 */
+                disp_inline = atoi(Istr) - 1;
                 if ((disp_inline<0) || (disp_inline>LEN_TH))
                 {
-                    fprintf(stderr,"ERROR: -I must be between 0 and %d, not %d\n",
-                            LEN_TH, disp_inline);
+                    fprintf(stderr,"ERROR: -I must be between 1 and %d, not %d\n",
+                            LEN_TH, disp_inline+1);
                     cmderr++;
                 }
                 break;
                 
-                /* Displacement of CROSSline in THrec: */
+            /* Displacement of CROSSline in THrec: */
             case 'X':
                 Xstr = optarg;
-                disp_crossline = atoi(Xstr);
+                /* The -X parameter is as Column Number - subtract one to get
+                 * the Displacement:
+                 */
+                disp_crossline = atoi(Xstr) - 1;
                 if ((disp_crossline<0) || (disp_crossline>LEN_TH))
                 {
-                    fprintf(stderr,"ERROR: -X must be between 0 and %d, not %d\n",
-                            LEN_TH, disp_crossline);
+                    fprintf(stderr,"ERROR: -X must be between 1 and %d, not %d\n",
+                            LEN_TH, disp_crossline+1);
                     cmderr++;
                 }
                 break;
                 
-                /* Displacement of first sample to use: */
+            /* Displacement of first sample to use: */
             case 'B':
                 Fstr = optarg;
                 i = atoi(Fstr);
@@ -524,28 +559,35 @@ int main (int argc, char * argv[])
                             MAXSAMPLES, i);
                     cmderr++;
                 }
-                else {
+                else 
+                {
                     firstsample = i;
                 }
                 break;
                 
-                /* Step-size between samples to use: */
+            /* Step-size between samples to use: */
             case 'S':
                 Sstr = optarg;
                 i = atoi(Sstr);
-                if ((i<1) || (i>MAXSAMPLES))
+                /*  Do not check for an upper bound on this value - but DO
+                 *  check against zero (special case), and negative (bad):
+                 */
+                if (i == 0)
+                {
+                    i = 1;
+                    fprintf(stderr, 
+                            "INFO:  -S 0 indicates no incrementation - OK\n");
+                }
+                else if (i<0)
                 {
                     fprintf(stderr, 
-                            "ERROR: -S must be between 1 and %d, not %d\n",
-                            MAXSAMPLES, i);
+                            "ERROR: -S may not be negative %d\n",i);
                     cmderr++;
                 }
-                else {
-                    samplestep = i;
-                }
+                samplestep = i;
                 break;
                 
-                /* Input file name root: */
+            /* Input file name root: */
             case 'i':
 				ifhfile = optarg;
                 ithfile = ifhfile;
@@ -563,55 +605,55 @@ int main (int argc, char * argv[])
                 strcat(tdnamein, TDtype);
                 break;
                 
-                /* Output file name root: */
+            /* Output file name root: */
             case 'o':
 				ofile = optarg;
 				strcpy(fnameout, ofile);
                 break;
                 
-                /* Input file name, for file header file only: */
+            /* Input file name, for file header file only: */
             case 'f':
 				ifhfile = optarg;
 				strcpy(fhnamein, ifhfile);
                 break;
                 
-                /* Input file name, for trace header file only: */
+            /* Input file name, for trace header file only: */
             case 't':
 				ithfile = optarg;
 				strcpy(thnamein, ithfile);
                 break;
                 
-                /* Input file name, for trace data only: */
+            /* Input file name, for trace data only: */
             case 'd':
 				itdfile = optarg;
 				strcpy(tdnamein, itdfile);
                 break;
                 
-                /* Output directory: */
+            /* Output directory: */
             case 'D':
                 odirname = optarg;
                 strcpy(alldirname, odirname);
                 break;
                 
-                /* Trace Header sequence number in line: */
+            /* Trace Header sequence number in line: */
             case 'h':
                 THfilecount = atoi(optarg);
                 fprintf(stderr, "TH Trace seq. no. in line is: %d\n",
                         THfilecount);
                 THfcUSE = THfilecount;
-                if (thisendian == ISLITTLE)
+                if (thisendian != input_endian)
                 {
                     THfilecount = swap_int32(THfilecount);
                 }
                 break;
                 
-                /* Trace Header sequence number in file initial value: */
+            /* Trace Header sequence number in file initial value: */
             case 'r':
                 THsegcount = atoi(optarg);
                 THscUSE = THsegcount;
                 fprintf(stderr, "TH Trace seq. no. in file starts at: %d\n",
                         THsegcount);
-                if (thisendian == ISLITTLE)
+                if (thisendian != input_endian)
                 {
                     THsegcount = swap_int32(THsegcount);
                 }
@@ -622,42 +664,42 @@ int main (int argc, char * argv[])
                 }
                 break;
                 
-                /* DEBUG: skip some of the Trace Header metadata output: */
+            /* DEBUG: skip some of the Trace Header metadata output: */
             case 'e':
                 ExtraTH = atoi(optarg);
                 break;
                 
-                /* TESTING: set debug trace flags: */
+            /* TESTING: set debug trace flags: */
             case 'T':
                 tprint = atoi(optarg);
                 fprintf(stderr,
                         "WARNING: trace flags (-T) not for production\n");
                 break;
                 
-                /* Show program version number and compile date: */
+            /* Show program version number and compile date: */
             case 'v':
                 fprintf(stderr, "Program Version %s %s\n", STHVERSION, STHDATE);
 				fprintf(stderr, "Program Name:   %s : %s\n", progname, argv[0]);
                 break;
                 
-                /* Use sample count as stated in Trace Header record: */
+            /* Use sample count as stated in Trace Header record: */
             case 'u':
                 UseTHsamp = 1;
                 break;
                 
-                /* Floating-point format of the output: */
+            /* Floating-point format of the output: */
             case 'F':
                 oformat = optarg;
                 break;
                 
-                /* TESTING only: skip data reading: */
+            /* TESTING only: skip data reading: */
             case 's':
                 SkipReadData = 1;
                 fprintf(stderr,
                         "WARNING: Data reading is skipped - not for production\n");
                 break;
                 
-                /* Set endian value of the input data */
+            /* Set endian value of the input data */
             case 'E':
                 pin_end = optarg;
                 if (NeverSwap != 0)
@@ -667,7 +709,7 @@ int main (int argc, char * argv[])
                 }
                 break;
                 
-                /* Set endian value of the output data: */
+            /* Set endian value of the output data: */
             case 'O':
                 pout_end = optarg;
                 if (NeverSwap != 0)
@@ -677,18 +719,18 @@ int main (int argc, char * argv[])
                 }
                 break;
                 
-                /* Rewrite (i.e. permit overwrite) of output files: */
+            /* Rewrite (i.e. permit overwrite) of output files: */
             case 'R':
                 rewrite = optarg;
                 /* Check argument against y/Y/n/N */
                 if ((strncmp(rewrite,"n",1)==0)||(strncmp(rewrite, "N", 1)==0))
                 {
-                    fprintf(stderr, "Existing files may NOT be overwritten\n");
+                    fprintf(stderr, "INFO: Existing files may NOT be overwritten\n");
                     rew = 0;
                 }
                 else if ((strncmp(rewrite,"n",1)==0)||(strncmp(rewrite, "N", 1)==0))
                 {
-                    fprintf(stderr, "Existing files CAN be overwritten\n");
+                    fprintf(stderr, "INFO: Existing files CAN be overwritten\n");
                     rew = 1;
                 }
                 else 
@@ -699,7 +741,7 @@ int main (int argc, char * argv[])
 
                 break;
                 
-                /* Unrecognised option: */
+            /* Unrecognised option: */
             case '?':
 				fprintf(stderr, "ERROR: Unrecognized option: -%c\n", optopt);
 				cmderr++;
@@ -712,15 +754,18 @@ int main (int argc, char * argv[])
     
     /*
      *  Check that we have an output file, and that it can be opened:
+     *  If there is no slicing taking place, then there must be a -o value
+     *  If there is slicing, then we CAN have a null -o
      */
-    if (ofile == (char *)NULL)
+    if ((ofile == (char *)NULL) && (sliceform == 0))
     {
         fprintf(stderr, "ERROR: No output file base (-o) has been specified\n");
         cmderr++;
     }
     else 
     {
-        fprintf(stderr, "Information: output file name base is %s\n", ofile);   
+        fprintf(stderr, "Information: output file name base is %s%s\n", 
+                odirname, ofile);   
     }
     
     /*
@@ -858,17 +903,24 @@ int main (int argc, char * argv[])
         fprintf(stderr, "     -f <filename> Input STH File Header file\n");
         fprintf(stderr, "     -t <filename> Input STH Trace Header file\n");
         fprintf(stderr, "     -d <filename> Input STH Trace Data file )\n");
-        fprintf(stderr, "   -o <filename>   Output SEG File        [No Default]\n");
+        fprintf(stderr, "   -o <filename>   Output SEG File Name   [No Default]\n");
+        fprintf(stderr, "   -D <directory>  Output directory name  [Default ./]\n");
 		fprintf(stderr, "   -v              Show version of this program\n");
-        fprintf(stderr, "   -P <x/i/t/n>    Slice Type (Optional)  [Default N]\n");
+        fprintf(stderr, "   -P <X/I/T/N>    Slice Type (Optional)  [Default N]\n");
         fprintf(stderr, "   -B <number>     First Slice parameter  [Default 0]\n");
         fprintf(stderr, "   -S <number>     Second Slice parameter [Default 1]\n");
-        fprintf(stderr, "   -I <number>     Displ. of INline in TH [Default 188]\n");
-        fprintf(stderr, "   -X <number>     Displ. of CROSSline TH [Default 192]\n");
+        fprintf(stderr, "   -n <number>     Max. no. output files  [Default 10]\n");
+        fprintf(stderr, "   -I <number>     Column of INline in TH [Default 187]\n");
+        fprintf(stderr, "   -X <number>     Column of CROSSline TH [Default 193]\n");
         fprintf(stderr, "   -h <filecount>  (Optional) Trace Header file count value\n");
         fprintf(stderr, "   -r <rec_count>  (Optional) Trace Header SEGY count value\n");
         fprintf(stderr, "   -F <i / e>      Float type convert     [Default none]\n");
         fprintf(stderr, "   -e <length>     Extra TH leng. skip    [Default 0]\n");
+        fprintf(stderr, "   -l              Use FH sample count throughout\n");
+        fprintf(stderr, "   -u              Use TH sample count    [Default]\n");
+        fprintf(stderr, "   -A              Do not check Inline    range limit\n");
+        fprintf(stderr, "   -G              Do not check Crossline range limit\n");
+        fprintf(stderr, "   -C              Do not check Timeline  range limit\n");
         if (NeverSwap == 0)
         {
             fprintf(stderr, "   -E <b / l>      Endian of input file [Default b(ig)]\n");
@@ -1044,8 +1096,10 @@ int main (int argc, char * argv[])
         }
     }
     
-    fprintf(stderr, "INline displacement in TH is    %d\n", disp_inline);
-    fprintf(stderr, "CROSSline displacement in TH is %d\n", disp_crossline);
+    fprintf(stderr, "INline column (displacement) in TH is    %d (%d)\n", 
+            disp_inline, (disp_inline - 1));
+    fprintf(stderr, "CROSSline column (displacement) in TH is %d (%d)\n", 
+            disp_crossline, (disp_crossline - 1));
     
     if (rew==0)
     {
@@ -1060,13 +1114,14 @@ int main (int argc, char * argv[])
     /* Write one spacing line - to make the printed output look pretty :-)  */
     fprintf(stderr, "\n");
     
+
     /* >>> Start of main processing <<< */
     
     /*
      *  There are two top-level operations here:
      *  1)  read and record in memory the File Header information
-     *  2)  read each individual Trace Header record, and for each of these
-     *  3)  read the appropriate Trace Data words, and for each such word
+     *  2a) read each individual Trace Header record, and for each of these
+     *  2b) read the appropriate Trace Data words, and for each such word
      *      generate a file containing:
      *      a) a single copy of the File Header record,
      *      b) a single copy of a Trace Header record (adjusted), and
@@ -1102,7 +1157,7 @@ int main (int argc, char * argv[])
      */
     nsamples = 0;
     memcpy(&nsamplesFH,&FHrec[(PFH_SAMPTHISR) - (PFH_START)],LFH_SAMPTHISR);
-    if ((thisendian == ISLITTLE) && (input_endian == BIG))
+    if (thisendian != input_endian)
     {
         nsamplesFH = swap_int16(nsamplesFH);
     }
@@ -1117,10 +1172,14 @@ int main (int argc, char * argv[])
     {
         UseFHsamp = 1;
         UseTHsamp = 0;
+        fprintf(stderr,
+                "INFO: Using sample count from File Header throughout.\n");
     }
     if (UseFHsamp == 0)
     {
         UseTHsamp = 1;
+        fprintf(stderr,
+                "INFO: Using sample count from Trace Header records throughout.\n");
     }
     else 
     {
@@ -1139,7 +1198,7 @@ int main (int argc, char * argv[])
      *  data:
      */
     memcpy(&typelenwk,&FHrec[(PFH_DATSAMPFC) - (PFH_START)],LFH_DATSAMPFC);
-    if ((thisendian == ISLITTLE) && (input_endian == BIG))
+    if (thisendian != input_endian)
     {
         typelenwk = swap_int16(typelenwk);
     }
@@ -1180,8 +1239,7 @@ int main (int argc, char * argv[])
      *  output are different:
      */
     if ((NeverSwap == 0) && 
-        (((input_endian == BIG) && (output_endian == LITTLE)) ||
-         ((input_endian == LITTLE) && (output_endian == BIG))))
+        (input_endian != output_endian))
     {
         for (j=0;j<LEN_FH_4;j=j+4)
         {
@@ -1201,7 +1259,7 @@ int main (int argc, char * argv[])
      *  in with the first file header.
      */
     memcpy (&nauxfh, &FHrec[(PFH_NETFHREC) - (PFH_START)], LFH_NETFHREC);
-    if ((thisendian == ISLITTLE) && (input_endian == BIG))
+    if (thisendian != input_endian)
     {
         nauxfh = swap_int16(nauxfh);
     }
@@ -1266,7 +1324,7 @@ int main (int argc, char * argv[])
         fprintf(stderr, "File Header output bytes:  %d\n", FHlength);
     }
 
-    /*  Part two: DATA  */
+    /*  Part two: TRACE HEADER and DATA  */
     
     /*
      *  This is a loop, reading first the trace header, then the corresponding
@@ -1278,8 +1336,7 @@ int main (int argc, char * argv[])
      */
     while (TraceEnd == 0)
     {   /*  MAIN DATA LOOP START  */
-        
-        
+                
         /*  Read in the next Trace Header record: */
         l = fread(THrec,1,LEN_TH+ExtraTH,thipf);
         iTHlength = iTHlength + l;
@@ -1334,7 +1391,7 @@ int main (int argc, char * argv[])
                      *  flow to continue and for that to happen.
                      *  IF we ever add anything further to this program, 
                      *  following the main data-processing loop, then we MUST
-                     *  un-comment this exit:
+                     *  un-comment this exit call:
                      */
                     //                    exit(BAD_MISSING_DATA);
                 }
@@ -1379,13 +1436,17 @@ int main (int argc, char * argv[])
              *  count of number of samples: if so, get that count...
              */
             TraceCount++;  /*  Count number of Trace Headers read  */
-//            fprintf(stderr,"DEBUG: we have read %d TH records\n",TraceCount);
             
             memcpy(&nsamplesTH, &THrec[(PTH_NOSAMPTR) - (PTH_START)],
                    LTH_NOSAMPTR);
             memcpy(&ThisIn,    &THrec[disp_inline],    len_inline);
-            memcpy(&ThisCross, &THrec[disp_crossline], len_crossline);  
-            if (thisendian == ISLITTLE)
+            memcpy(&ThisCross, &THrec[disp_crossline], len_crossline);
+            /*
+             *  Correct the Crossline number and Inline numbers used in this
+             *  code for the enian-ness of this machine. This needs to be done
+             *  only if "this" and "input" endians are different:
+             */
+            if (thisendian != input_endian)
             {
                 ThisIn = swap_int32(ThisIn);
                 ThisCross = swap_int32(ThisCross);
@@ -1400,6 +1461,7 @@ int main (int argc, char * argv[])
              */
             
             usensamplesTH = nsamplesTH;
+
             if (usensamplesTH>MAXOUTFILES)
             {
                 /*
@@ -1409,6 +1471,7 @@ int main (int argc, char * argv[])
                  */
                 usensamplesTH = MAXOUTFILES;
             }
+
             if (usensamplesTH>noutputfiles)
             {
                 /*
@@ -1418,27 +1481,34 @@ int main (int argc, char * argv[])
                  */
                 usensamplesTH = noutputfiles;
             }
-            if ((opf[0] == (FILE *)NULL) && ((sliceform == 3) || (sliceform == 0)))
+
+            /*
+             *  This is the first TH record to be read, so we now have to
+             *  open the output file or files. The number - and name - of 
+             *  the files to open depends upon the slice type.
+             *  -P n  (Normal) There is no slicing, so only one output file
+             *        is required. This is the default for this program.
+             *  -P x  (Crossline) There will be a series of output files,
+             *        a different one for each Inline.  
+             *  -P i  (Inline) There will be a series of output files, a
+             *        different one for each Crossline. 
+             *  -P t  (Timeline) There are a number of output files, one
+             *        for each timeslice being processed. The number opened
+             *        is the minimum of (a) the number of data samples in
+             *        this first point, (b) the maximum number of files that
+             *        can be opened at once (in the value MAXOUTFILES).
+             *        CHANGE: Version 0.56 onwards (Timeline) There are a
+             *        series of output files, a different one for each
+             *        Inline (very similar to -P x)
+             */
+            if ((sliceform == 0))
             {
-                /*
-                 *  This is the first TH record to be read, so we now have to
-                 *  open the output file or files. The number - and name - of 
-                 *  the files to open depends upon the slice type.
-                 *  -P n  (Normal) There is no slicing, so only one output file
-                 *        is required. This is the default for this program.
-                 *  -P x  (Crossline) There will be a series of output files,
-                 *        a different one for each Inline.  
-                 *  -P i  (Inline) There will be a series of output files, a
-                 *        different one for each Crossline. 
-                 *  -P t  (Timeline) There are a number of output files, one
-                 *        for each timeslice being processed. The number opened
-                 *        is the minimum of (a) the number of data samples in
-                 *        this first point, (b) the maximum number of files that
-                 *        can be opened at once (in the value MAXOUTFILES).
+                /* There is NO slicing - only one output file: 
+                 * Check whether this is already open, and if not
+                 * then create and open it:
                  */
-                if (sliceform == 0)
+                if (opf[0] == (FILE *)NULL)
                 {
-                    /* There is NO slicing - only one output file: */
                     /*
                      *  Set the only output file name to be the base name, 
                      *  within the -d specified directory (if any):
@@ -1452,11 +1522,13 @@ int main (int argc, char * argv[])
                     {
                         strcpy(&fnameoutD[0][0], fnameout);
                     }
+                    /* Version 0.56: append '.sgy' to the constructed filename */
+                    /* Version 0.66: Addition of '.sgy' REMOVED for non-slicing case: */
+//                    strcat(&fnameoutD[0][0], ".sgy");
 
                     usensamplesTH = 1;
                     
                     /* Open the file: */
-                    currentfile = 0;
                     /* Version 0.52 onwards: Do we allow overwrite of an
                      * existing file? If so, simply open the file for output,
                      * but if not, test whether the file exists, and simply
@@ -1464,302 +1536,232 @@ int main (int argc, char * argv[])
                      */
                     if (rew!=0)
                     {
-                        opf[currentfile] = fopen ( &fnameoutD[currentfile][0], "r");
-                        if (opf[currentfile] != (FILE *)NULL)
+                        opf[0] = fopen ( &fnameoutD[0][0], "r");
+                        if (opf[0] != (FILE *)NULL)
                         {
                             /* The file already exists - quit and return to caller */
                             fprintf(stderr,
-                                    "INFO:  Output file already exists - OK\n");
-                            goto ProgramEnd;
+                                    "ERROR: Output file already exists - Will NOT be overwritten\n");
+                            fprintf(stderr, "       Program terminates.\n");
+                            exit(BAD_NFILE_EXISTS);
                         }
-                        /* Ensure that the test open leaves behind no trace: */
-                        opf[currentfile] = (FILE *)NULL;
                     }
-                    opf[currentfile] = fopen ( &fnameoutD[currentfile][0], "w");
-                    if (opf[currentfile] == (FILE *)NULL)
+                    opf[0] = fopen ( &fnameoutD[0][0], "w");
+                    if (opf[0] == (FILE *)NULL)
                     {
                         fprintf(stderr,
                                 "ERROR: Unable to open output (Noslice) file [%d] %s\n"
                                 "       errno = %d\n"
-                                "       Program terminates.\n", currentfile, 
-                                &fnameoutD[currentfile][0], errno);
+                                "       Program terminates.\n", 0, 
+                                &fnameoutD[0][0], errno);
                         exit(BAD_OUTPUT_OPEN);
                     }
                     else 
                     {
                         fprintf(stderr,
                                 "INFO:  Opened output (Noslice) file [%d] %s\n",
-                                currentfile, &fnameoutD[currentfile][0]);
+                                0, &fnameoutD[0][0]);
                     }
-                    currentfile = 0;
                     /*
                      *  Write the FH record to this output file:
                      */
-                    FHwrite(&FHrec[0], &FHlength, opf[currentfile], 
-                            &fnameoutD[currentfile][0]);
+                    FHlength = FHwrite(&FHrec[0], FHlength1, opf[0], 
+                            &fnameoutD[0][0]);
                 }
-                else 
+            } /* end of sliceform 0 */
+            else /* sliceform is non-zero */
+            { 
+                /* Crossline or Timeline. If the output file is not open OR if 
+                 * this is a different Crossline from the previous one, open a 
+                 * new output file:
+                 */
+                if ((sliceform == 1) || (sliceform == 3))
                 {
-                    /* There is TIME slicing - several simultaneous output files */
-                    for (currentfile=0;(currentfile<usensamplesTH);currentfile++)
+                    if (ThisCross != PrevCross)
+                    { 
+                        tfclose(opf[0]);
+                        opf[0] = (FILE *)NULL; 
+                        PrevCross = ThisCross;
+                    }
+                }
+                else if (sliceform == 2)
+                {
+                    /* Similarly for InLine split: */
+                    if (ThisIn != PrevIn)
+                    { 
+                        tfclose(opf[0]);
+                        opf[0] = (FILE *)NULL; 
+                        PrevIn = ThisIn;
+                    } 
+                }
+                else
+                {
+                    /* Invalid sliceform */
+                    fprintf(stderr, "ERROR: Internal error, sliceform = %d\n",
+                            sliceform);
+                    fprintf(stderr, "       Program terminates.\n");
+                    exit(BAD_SLICE_FORM);
+                }
+                
+                /*
+                 *  At this point we know that:
+                 *  1) sliceform has a valid non-zero value (1, 2 or 3), and
+                 *  2) if we have to open a new output file, then the old one
+                 *     has been closed.
+                 */
+                
+                if (opf[0] == (FILE *)NULL)
+                { 
+                    /* Construct the file name: */
+                    usensamplesTH = 1;
+                    tstring = &work16[0];
+                    if (odirname != (char *)NULL)
                     {
-                        if (opf[currentfile] == (FILE *)NULL)
+                        strcpy(&fnameoutD[0][0], odirname);
+                        strcat(&fnameoutD[0][0], fnameout);
+                    }
+                    else 
+                    {
+                        strcpy(&fnameoutD[0][0], fnameout);
+                    }
+                    
+                    /*  If we are doing Timeline splitting, then compute the
+                     *  timeline number for this new line:
+                     */
+                    if (sliceform == 3)
+                    {
+                        if (ThisTime == 0)
                         {
-                            /* Construct file name: */
-                            if (currentfile==0)
+                            ThisTime = firstsample;
+                            PrevTime = 0;
+                        }
+                        else 
+                        {
+                            PrevTime = ThisTime;
+                            ThisTime = ThisTime + samplestep;
+                        }
+
+                    }
+                    
+                    /*
+                     *   Finish constructing the filename, and also (if still
+                     *   active) check the validity of the new name:
+                     */
+                    if (sliceform == 1)
+                    {
+                        if ((SafeCross == 0) &&
+                            ((ThisCross < 0) || (ThisCross > MAXCROSSSLICE)))
+                        {
+                            fprintf(stderr,
+                                    "ERROR: Crossline number is outside range [%d]\n"
+                                    "       Must be between 0 and %d\n"
+                                    "       Program terminates.\n",
+                                    ThisCross, MAXCROSSSLICE);
+                            exit(BAD_CROSSLINE);
+                        }
+                        
+                        sprintf(tstring, "X%05d.sgy", ThisCross);
+                    }
+                    else if (sliceform == 2)
+                    {
+                        if ((SafeIn == 0) && 
+                            ((ThisIn < 0) || (ThisIn > MAXINSLICE)))
+                        {
+                            fprintf(stderr,
+                                    "ERROR: Inline number is outside range [%d]\n"
+                                    "       Must be between 0 and %d\n"
+                                    "       Program terminates.\n",
+                                    ThisIn, MAXINSLICE);
+                            exit(BAD_INLINE);
+                        }
+                        
+                        sprintf(tstring, "I%05d.sgy", ThisIn);
+                    }
+                    else 
+                    {
+                        if ((SafeTime == 0) &&
+                            ((ThisTime < 0) || (ThisTime > MAXTIMESLICE)))
+                        {
+                            fprintf(stderr,
+                                    "ERROR: Timeline number is outside range [%d]\n"
+                                    "       Must be between 0 and %d\n"
+                                    "       Program terminates.\n",
+                                    ThisTime, MAXTIMESLICE);
+                            exit(BAD_TIMELINE);
+                        }
+                        
+                        sprintf(tstring, "T%05d.sgy", ThisTime);
+                    }
+                    strcat (&fnameoutD[0][0],tstring);
+                    
+                    /* Open the file: */
+                    if (rew != 0)
+                    {
+                        opf[0] = fopen ( &fnameoutD[0][0], "r" );
+                        if (opf[0] != (FILE *)NULL)
+                        {
+                            /* The output file already exists - BUT we are NOT
+                             * permitted to overwrite it. So close the file, and
+                             * set the pointer to it to be NULL so that we do
+                             * not attempt to write to this file:
+                             */
+                            tfclose(opf[0]);
+                            opf[0] = (FILE *)NULL;
+                            if (sliceform == 1)
                             {
-                                fnameD[currentfile] = firstsample;
+                                fprintf(stderr,
+                                        "ERROR: Crossline File %s already exists\n", 
+                                        &fnameoutD[0][0]);
+                                exit(BAD_XFILE_EXISTS);
+                            }
+                            else if (sliceform == 2) 
+                            {
+                                fprintf(stderr,
+                                        "ERROR: Inline File %s already exists\n", 
+                                        &fnameoutD[0][0]);
+                                exit(BAD_IFILE_EXISTS);
                             }
                             else
                             {
-                                fnameD[currentfile] = fnameD[currentfile-1] + samplestep;
-                            }
-                            tstring = &work16[0];
-                            if (odirname != (char *)NULL)
-                            {
-                                strcpy(&fnameoutD[currentfile][0], odirname);
-                                strcat(&fnameoutD[currentfile][0], fnameout);
-                            }
-                            else 
-                            {
-                                strcpy(&fnameoutD[currentfile][0], fnameout);
-                            }
-
-                            if ((fnameD[currentfile] < 0) || (fnameD[currentfile] > 99999))
-                            {
-                                fprintf(stderr,"ERROR: Timeline number is outside range [%d]\n"
-                                        "       Must be between 0 and 99999\n"
-                                        "       Program terminates.\n",
-                                        fnameD[currentfile]);
-                                exit(BAD_TIMELINE);
-                            }
-                            sprintf(tstring, "/tline/T%05d", fnameD[currentfile]);
-                            strcat (&fnameoutD[currentfile][0],tstring);
-                            /* Open file "currentfile": */
-                            if (rew != 0)
-                            {
-                                opf[currentfile] = fopen ( &fnameoutD[currentfile][0], "r" );
-                                if (opf[currentfile] != (FILE *)NULL)
-                                {
-                                    fprintf(stderr, "INFO:  Timeslice file %s already exists\n",
-                                            &fnameoutD[currentfile][0]);
-                                    tfclose(opf[currentfile]);
-                                    opf[currentfile] = (FILE *)NULL;
-                                    goto TlineFHOpen;
-                                }
-                            }
-                            opf[currentfile] = fopen ( &fnameoutD[currentfile][0], "w" );
-                            if (opf[currentfile] == (FILE *)NULL)
-                            {
                                 fprintf(stderr,
-                                    "ERROR: Unable to open output (Timeslice) file [%d] %s\n"
-                                    "       errno = %d\n"    
-                                    "       Program terminates.\n", currentfile, 
-                                    &fnameoutD[currentfile][0], errno);
-                                exit(BAD_OUTPUT_OPEN);
+                                        "ERROR: Timeline File %s already exists\n", 
+                                        &fnameoutD[0][0]);
+                                exit(BAD_TFILE_EXISTS);
                             }
-                            else 
-                            {
-                                fprintf(stderr,
-                                    "INFO:  Opened output (Timeslice) file [%d] %s\n",
-                                    currentfile, &fnameoutD[currentfile][0]);
-                            }
-                            /*
-                             *  Write the FH record to this output file:
-                             */
-                            FHwrite(&FHrec[0], &FHlength, opf[currentfile], 
-                                    &fnameoutD[currentfile][0]);
-                        TlineFHOpen:;
-                        } 
-                    }
-                }
-            }
-            else if (sliceform == 1)
-            { 
-                /* Crossline. If the output file is not open OR if this is a
-                 * different Crossline from the previous one, open a new output
-                 * file:
-                 */
-                if (ThisCross != PrevCross)
-                { 
-                    tfclose(opf[0]);
-                    opf[0] = (FILE *)NULL; 
-                    PrevCross = ThisCross;
-                } 
-                if (opf[0] == (FILE *)NULL)
-                { 
-                    /* Construct the file name: */
-                    currentfile = 0;
-                    usensamplesTH = 1;
-                    tstring = &work16[0];
-                    if (odirname != (char *)NULL)
-                    {
-                        strcpy(&fnameoutD[currentfile][0], odirname);
-                        strcat(&fnameoutD[currentfile][0], fnameout);
-                    }
-                    else 
-                    {
-                        strcpy(&fnameoutD[currentfile][0], fnameout);
-                    }
-
-                    if ((ThisCross < 0) || (ThisCross > 99999))
-                    {
-                        fprintf(stderr,"ERROR: Crossline number is outside range [%d]\n"
-                                "       Must be between 0 and 99999\n"
-                                "       Program terminates.\n",
-                                ThisCross);
-                        exit(BAD_CROSSLINE);
-                    }
-                    sprintf(tstring, "/xline/X%05d", ThisCross);
-                    strcat (&fnameoutD[currentfile][0],tstring);
-                    
-                    /* Open the file: */
-                    /* Version 0.52 onwards: Do we allow overwrite of an exist-
-                     * ing file? If so, simply open for write. If not, then
-                     * check whether the output file already exists. If it
-                     * does, skip the open (with an INFO message), and also
-                     * skip the writing to that file. We do, though, have to
-                     * read all the input, none the less:
-                     */
-                    if (rew != 0)
-                    {
-                        opf[currentfile] = fopen ( &fnameoutD[currentfile][0], "r" );
-                        if (opf[currentfile] != (FILE *)NULL)
-                        {
-                            /* The output file already exists - BUT we are NOT
-                             * permitted to overwrite it. So close the file, and
-                             * set the pointer to it to be NULL so that we do
-                             * not attempt to write to this file:
-                             */
-                            tfclose(opf[currentfile]);
-                            opf[currentfile] = (FILE *)NULL;
-                            fprintf(stderr,"INFO:  Crossline File %s already exists\n", 
-                                    &fnameoutD[currentfile][0]);
-                            goto THfileIsOpen;
                         }
                     }
-                    opf[currentfile] = fopen ( &fnameoutD[currentfile][0], "w" );
-                    if (opf[currentfile] == (FILE *)NULL)
+                    
+                    /*
+                     *  File does NOT already exist - so open it for writing, 
+                     *  and write the initial File Header:
+                     */
+                    opf[0] = fopen ( &fnameoutD[0][0], "w" );
+                    if (opf[0] == (FILE *)NULL)
                     {
                         fprintf(stderr,
-                                "ERROR: Unable to open output (Crossline) file [%d] %s\n"
+                                "ERROR: Unable to open output file [%d] %s\n"
                                 "       errno = %d\n"
-                                "       Program terminates.\n", currentfile, 
-                                &fnameoutD[currentfile][0], errno);
+                                "       Program terminates.\n", 0, 
+                                &fnameoutD[0][0], errno);
                         exit(BAD_OUTPUT_OPEN);
                     } 
                     else 
                     { 
                         fprintf(stderr,
-                                "INFO:  Opened output (Crossline) file [%d] %s\n",
-                                currentfile, &fnameoutD[currentfile][0]);
+                                "INFO:  Opened output file [%d] %s\n",
+                                0, &fnameoutD[0][0]);
                     } 
-                    currentfile = 0;
                     /*
                      *  Write the FH record to this output file:
                      */
-                    FHwrite(&FHrec[0], &FHlength, opf[currentfile], 
-                            &fnameoutD[currentfile][0]);
-                } 
-            } 
-            else if (sliceform == 2)
-            { 
-                /* Inline. If the output file is not open OR if this is a
-                 * different INline from the previous one, open a new output
-                 * file:
-                 */
-                if (ThisIn != PrevIn)
-                { 
-                    tfclose(opf[0]);
-                    opf[0] = (FILE *)NULL; 
-                    PrevIn = ThisIn;
-                } 
-                if (opf[0] == (FILE *)NULL)
-                { 
-                    /* Construct the file name: */
-                    currentfile = 0;
-                    usensamplesTH = 1;
-                    tstring = &work16[0];
-                    if (odirname != (char *)NULL)
-                    {
-                        strcpy(&fnameoutD[currentfile][0], odirname);
-                        strcat(&fnameoutD[currentfile][0], fnameout);
-                    }
-                    else 
-                    {
-                        strcpy(&fnameoutD[currentfile][0], fnameout);
-                    }
 
-                    if ((ThisIn < 0) || (ThisIn > 99999))
-                    {
-                        fprintf(stderr,"ERROR: Inline number is outside range [%d]\n"
-                                "       Must be between 0 and 99999\n"
-                                "       Program terminates.\n",
-                                ThisIn);
-                        exit(BAD_INLINE);
-                    }
-                    sprintf(tstring, "/iline/I%05d", ThisIn);
-                    strcat (&fnameoutD[currentfile][0],tstring);
-                    
-                    /* Open the file: */
-                    /* Version 0.52 onwards: Do we allow overwrite of an exist-
-                     * ing file? If so, simply open for write. If not, then
-                     * check whether the output file already exists. If it
-                     * does, skip the open (with an INFO message), and also
-                     * skip the writing to that file. We do, though, have to
-                     * read all the input, none the less:
-                     */
-                    if (rew != 0)
-                    {
-                        opf[currentfile] = fopen ( &fnameoutD[currentfile][0], "r" );
-                        if (opf[currentfile] != (FILE *)NULL)
-                        {
-                            /* The output file already exists - BUT we are NOT
-                             * permitted to overwrite it. So close the file, and
-                             * set the pointer to it to be NULL so that we do
-                             * not attempt to write to this file:
-                             */
-                            tfclose(opf[currentfile]);
-                            opf[currentfile] = (FILE *)NULL;
-                            fprintf(stderr,"INFO:  Inline File %s already exists\n", 
-                                    &fnameoutD[currentfile][0]);
-                            goto THfileIsOpen;
-                        }
-                    }
-                    opf[currentfile] = fopen ( &fnameoutD[currentfile][0], "w" );
-                    if (opf[currentfile] == (FILE *)NULL)
-                    { 
-                        fprintf(stderr,
-                                "ERROR: Unable to open output (Inline) file [%d] %s\n"
-                                "       errno = %d\n"
-                                "       Program terminates.\n", currentfile, 
-                                &fnameoutD[currentfile][0], errno);
-                        exit(BAD_OUTPUT_OPEN);
-                    } 
-                    else 
-                    { 
-                        fprintf(stderr,
-                                "INFO:  Opened output (Inline) file [%d] %s\n",
-                                currentfile, &fnameoutD[currentfile][0]);
-                    } 
-                
-                    currentfile = 0;
-                    /*
-                     *  Write the FH record to this output file:
-                     */
-                    FHwrite(&FHrec[0], &FHlength, opf[currentfile], 
-                            &fnameoutD[currentfile][0]);
+                    FHlength = FHwrite(&FHrec[0], FHlength1, opf[0], 
+                            &fnameoutD[0][0]);
                 } 
-            } 
-            
-        THfileIsOpen:
-            if ((opf[0] == (FILE *)NULL) && (sliceform == 3))
-            {
-                fprintf(stderr, "INFO:  Number of Time samples %d [%d]\n", 
-                        nsamplesTH, usensamplesTH);
-            }
+            } /* Non-zero sliceform */ 
                         
-            if (thisendian == ISLITTLE)
+                
+            if (thisendian != input_endian)
             {
                 nsamplesTH = swap_int16(nsamplesTH);
             }
@@ -1811,8 +1813,7 @@ int main (int argc, char * argv[])
              */
             i = LEN_TH_4;
             if ((NeverSwap == 0) && 
-                (((input_endian == BIG) && (output_endian == LITTLE)) ||
-                 ((input_endian == LITTLE) && (output_endian == BIG))))
+                (input_endian != output_endian))
             {
                 for (j=0;j<i;j=j+4)
                 {
@@ -1825,40 +1826,24 @@ int main (int argc, char * argv[])
                 }
             }
 
-            /*
-             *  If this is a timeslice, change the number of data items in
-             *  this Trace Header record to be one:
-             */
-            if (sliceform == 3)
-            {
-                memcpy(&THrec[(PTH_NOSAMPTR) - (PTH_START)], &TH_ONE,
-                       LTH_NOSAMPTR);
-            }
-            else 
-            {
-                usensamplesTH = 1;
-            }
-
+            usensamplesTH = 1;
             
-            for (currentfile=0; (currentfile<usensamplesTH); currentfile++)
+            /*
+             *  Write the Trace Header record:
+             *  Only if the output file is open:
+             */
+            if (opf[0] != (FILE *)NULL)
             {
-                /*
-                 *  Write the Trace Header record:
-                 *  Only if the output file is open:
-                 */
-                if (opf[currentfile] != (FILE *)NULL)
+                l = FHwrite(&THrec[0], THlength1, opf[0], &fnameoutD[0][0]);
+                if (l != LEN_TH)
                 {
-                    l = fwrite(THrec, 1, LEN_TH, opf[currentfile]);
-                    if (l != LEN_TH)
-                    {
-                        fprintf(stderr,
-                                "ERROR: Trace Header record not complete - length %d\n"
-                                "       errno = %d\n", l, errno);
-                        fprintf(stderr, "       File [%d] %s incomplete\n", 
-                                currentfile, fnameoutD[currentfile]);
-                        fprintf(stderr, "       Program terminates.\n");
-                        exit(BAD_FH_WRITE1);
-                    }
+                    fprintf(stderr,
+                            "ERROR: Trace Header record not complete - length %d\n"
+                            "       errno = %d\n", l, errno);
+                    fprintf(stderr, "       File [%d] %s incomplete\n", 
+                            0, fnameoutD[0]);
+                    fprintf(stderr, "       Program terminates.\n");
+                    exit(BAD_FH_WRITE1);
                 }
             }
             
@@ -1935,7 +1920,7 @@ int main (int argc, char * argv[])
                         exit (BAD_DATA_READ);
                     }
                     m = TDDataLength; /*  and save for later - to output  */
-                    if (thisendian == ISLITTLE)
+                    if (thisendian != input_endian)
                     {
                         m = swap_int16(m);
                     }
@@ -1948,18 +1933,6 @@ int main (int argc, char * argv[])
                                 TraceCount, ReadLength);
                         exit(BAD_DATA_LENGTH);
                     }
-                    /*
-                     *  Check whether this record was correctly read:
-                     */
-//                    if (l != 2)
-//                    {
-                        //                        TraceEnd = 1; /*  Set end of large copy loop  */
-//                        fprintf(stderr, "ERROR: END detected in reading data length\n"
-//                                "       record %d bytes expected %d but read only %d\n"
-//                                "       Program terminates.\n",
-//                                TraceCount, 2, l);
-//                        exit (BAD_DATA_READ);
-//                    }
                     
                     /*
                      *   We are happy that this length has been correctly read.
@@ -1981,15 +1954,15 @@ int main (int argc, char * argv[])
                         LOBlength = nsamples * typelength;
                         LOBlength2 = LOBlength;
                         sn = LOBlength - 2;
-                        LOBlength64 = LOBlength;
+//                        LOBlength64 = LOBlength;
                         /*
                          *  Convert these lengths to big endian:
                          */
-                        if (thisendian == ISLITTLE)
+                        if (thisendian != input_endian)
                         {
                             LOBlength = swap_int16(LOBlength);
                             LOBlength2 = swap_int32(LOBlength2);
-                            LOBlength64 = swap_double(LOBlength64);
+//                            LOBlength64 = swap_double(LOBlength64);
                             sn = swap_int16(sn);
                         }
                         
@@ -2003,13 +1976,12 @@ int main (int argc, char * argv[])
                      */
                     l = fread(DataBuffer, 1, ReadLength, tdipf);
                     WriteLength = ReadLength;
-                    iTDlength = iTDlength + l;  /*  Remember data length read  */
+                    iTDlength = iTDlength + l + 2;  /*  Remember data length read, with prefix  */
                     /*
                      *  Check whether this chunk-end was correctly read:
                      */
                     if (l != ReadLength)
                     {
-                        //                        TraceEnd = 1; /*  Set end of large copy loop  */
                         fprintf(stderr,
                                 "ERROR: END detected in reading data\n"
                                 "       Length expected %d bytes, but read %d bytes\n"
@@ -2051,18 +2023,20 @@ int main (int argc, char * argv[])
                      *  writing any output, skip this computationally expensive
                      *  step:
                      */
-                    if (opf[currentfile] != (FILE *)NULL)
+                    if (opf[0] != (FILE *)NULL)
                     {
                         if (floatconvert != NOCONVERT)
                         {
                             j = WriteLength>>2;
                             if (floatconvert == CIBM)
                             {
-                                ieee2ibm(&DataBuffer[skiplength-1], &DataBuffer[skiplength-1], j);
+                                ieee2ibm(&DataBuffer[skiplength-1], 
+                                         &DataBuffer[skiplength-1], j);
                             }
                             else if (floatconvert == CIEEE)
                             {
-                            ibm2ieee(&DataBuffer[skiplength-1], &DataBuffer[skiplength-1], j);
+                            ibm2ieee(&DataBuffer[skiplength-1], 
+                                     &DataBuffer[skiplength-1], j);
                             }
                         }
                     /*
@@ -2070,8 +2044,7 @@ int main (int argc, char * argv[])
                      *  if so, do that here:
                      */
                         if ((NeverSwap == 0) && 
-                            (((thisendian == BIG) && (output_endian == LITTLE)) ||
-                            ((thisendian == LITTLE ) && (output_endian == BIG))))
+                            (input_endian != output_endian)) 
                         {
                             for (j=0;j<WriteLength;j=j+4)
                             {
@@ -2082,58 +2055,32 @@ int main (int argc, char * argv[])
                         }
                     }
                     
-                    if (sliceform!=3)
+                    /* Write this record only if the output file is open: */
+                    if (opf[0] != (FILE *)NULL)
                     {
-                        currentfile = 0;
-                        /* Write this record only if the output file is open: */
-                        if (opf[currentfile] != (FILE *)NULL)
-                        {
-                            l = fwrite(&DataBuffer[skiplength-1],1, WriteLength,
-                                       opf[currentfile]);
+                        l = FHwrite(&DataBuffer[skiplength-1], WriteLength,
+                                    opf[0], &fnameoutD[0][0]);
                                         
-                            /*
-                            *  Check this was written correctly:
-                            */
-                            if (l != WriteLength)
-                            {
-                                fprintf(stderr, "ERROR: Problem in writing record %d\n"
-                                    "       Tried to write %d bytes, but wrote %d bytes\n"
-                                    "       errno = %d\n"    
-                                    "       Program terminating",
-                                    TraceCount, WriteLength, l, errno);
-                                exit(BAD_DATA_WRITE);
-                            }
-                        }
-                    }
-                    else if (sliceform==3) 
-                    {
-                        for (currentfile=0; (currentfile<usensamplesTH); currentfile++)
+                        /*
+                         *  Check this was written correctly:
+                         */
+                        if (l != WriteLength)
                         {
-                            if (opf[currentfile] != (FILE *)NULL)
-                            {
-                                /* The amount to write depends upon the length
-                                 * of the sample type (1 or 2 or 4):
-                                 */
-                                WriteLength = typelength;
-                                l = fwrite(&DataBuffer[skiplength-1+4*currentfile],
-                                           1, WriteLength, opf[currentfile]);
-                                if (l != WriteLength)
-                                {
-                                    fprintf(stderr, "ERROR: Problem in writing Timeslice record %d\n"
-                                        "       Tried to write %d bytes, but wrote %d bytes\n"
-                                        "       errno = %d\n"    
-                                        "       Program terminating",
-                                        TraceCount, WriteLength, l, errno);
-                                    exit(BAD_DATA_WRITE);
-                                }
-                            }
+                            fprintf(stderr, "ERROR: Problem in writing record %d\n"
+                                "       Tried to write %d bytes, but wrote %d bytes\n"
+                                "       errno = %d\n"    
+                                "       Program terminating",
+                                TraceCount, WriteLength, l, errno);
+                            exit(BAD_DATA_WRITE);
                         }
                     }
-                    else
+                    else 
                     {
-                        fprintf(stderr, "ERROR: Unrecognised slice form [%d]\n",sliceform);
-                        exit (BAD_SLICE_FORM);
+                        fprintf(stderr, 
+                                "DEBUG: Data record writing suppressed at %d, %d\n",
+                                TDlength, sampthisset);
                     }
+
                     
                     /* 
                      *  Remember data amount written:
@@ -2154,7 +2101,6 @@ int main (int argc, char * argv[])
     
     /*  TIDY UP AND FINISH EXECUTION  */
     
-ProgramEnd:    
     /*
      *  The program has finished processing.
      *  Display information to the user, close the files, and exit:
@@ -2177,11 +2123,8 @@ ProgramEnd:
      */
     if ( strcmp(ofile, "stdout") != 0 )
     {
-        for (currentfile=0; (currentfile<MAXOUTFILES); currentfile++)
-        {
-            tfclose(opf[currentfile]);
-            opf[currentfile] = (FILE *)NULL;
-        }
+            tfclose(opf[0]);
+            opf[0] = (FILE *)NULL;
     }
     tfclose(thipf);
     tfclose(tdipf);
@@ -2196,22 +2139,21 @@ ProgramEnd:
 /*
  *  Write the FH record to this output file:
  */
-void FHwrite (unsigned char *FHrec, int *FHlength, FILE *outfile, char *filename)
+int FHwrite (unsigned char *FHrec, int FHlength, FILE *outfile, char *filename)
 {
     int l = 0;
     
-    l = fwrite(FHrec, 1, LEN_FH, outfile);
-    if (l != LEN_FH)
+    l = fwrite(FHrec, 1, FHlength, outfile);
+    if (l != FHlength)
     {
         fprintf(stderr,
-                "ERROR: First File Header record not complete - length %d\n"
-                "       errno = %d\n", l, errno);
+                "ERROR: Written record not complete - length %d expected %d\n"
+                "       errno = %d\n", l, FHlength, errno);
         fprintf(stderr, "       Error writing file %s\n", filename);
         fprintf(stderr, "       Program terminates.\n");
         exit(BAD_FH_WRITE1);
     }
-    *FHlength = *FHlength + LEN_FH; /* Count length of record written */
-    return;
+    return l;
 }
 
 
@@ -2230,84 +2172,13 @@ int tfclose (FILE *filep)
     {
         ret = fclose(filep);
         /* NOTE: Do ***NOT*** un-comment the following statement, as the file
-         *       being close *might* be stdin or stdout or stderr
+         *       being closed *might* be stdin or stdout or stderr
          */
 //        filep = (FILE *)NULL;
         return ret;
     }
 }
 
-/*
- **! Byte swap unsigned short
- */
-uint16_t swap_uint16( uint16_t val ) 
-{
-	return (val << 8) | (val >> 8 );
-}
-
-
-/*
- **! Byte swap short
- */
-int16_t swap_int16( int16_t val ) 
-{
-	return (val << 8) | ((val >> 8) & 0xFF);
-}
-
-/*
- **! Byte swap unsigned int
- */
-uint32_t swap_uint32( uint32_t val )
-{
-	val = ((val << 8) & 0xFF00FF00 ) | ((val >> 8) & 0xFF00FF ); 
-	return (val << 16) | (val >> 16);
-}
-
-
-/*
- **! Byte swap int
- */
-int32_t swap_int32( int32_t val )
-{
-    val = ((val << 8) & 0xFF00FF00) | ((val >> 8) & 0xFF00FF ); 
-    return (val << 16) | ((val >> 16) & 0xFFFF);
-}
-
-/*
- ** unswap using char pointers
- */
-double swap_double(unsigned long long a) 
-{
-	
-    double d;
-    unsigned char *src = (unsigned char *)&a;
-    unsigned char *dst = (unsigned char *)&d;
-	
-    dst[0] = src[7];
-    dst[1] = src[6];
-    dst[2] = src[5];
-    dst[3] = src[4];
-    dst[4] = src[3];
-    dst[5] = src[2];
-    dst[6] = src[1];
-    dst[7] = src[0];
-	
-    return d;
-}
-
-uint32_t swap_single(uint32_t a)
-{
-    uint32_t d;
-    uint32_t aa;
-    unsigned char *src = (unsigned char *)&aa;
-    unsigned char *dst = (unsigned char *)&d;
-    aa = a;
-    dst[0] = src[3];
-    dst[1] = src[2];
-    dst[2] = src[1];
-    dst[3] = src[0];
-    return d;
-}
 
 /*******************************************************************************
  *  cnvsth2seg.c		

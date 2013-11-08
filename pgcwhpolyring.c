@@ -1,11 +1,11 @@
 /*
- ** Copyright (c) 2013, 2012, 2011 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
+ ** Copyright (c) 2011-2013 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
  **
  ** pgcwhpolyring.c (part of pgcwhpolygon)
  ** 
  */
 
-/* This file last updated 20130528:1305 */
+/* This file last updated 20130815:1205 */
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -18,6 +18,8 @@
 #include <limits.h>
 #include <math.h>         /* for sqrt()      */
 
+#include "cnvswap.h"
+#include "cnvendian.h"
 #include "pgcwhpolygon.h"
 
 
@@ -86,10 +88,6 @@ GetRings(FILE       **fp,
     /*
 	 ** While there's another 'ring' to build ...
 	 */
-//	if (tpbits[TRINGS] != 0)
-//	{
-//            fprintf(stderr,"GetRings() ...\n");
-//	}
 	while (fscanf(*fp, FMTX ", " FMTY "\n", &readX, &readY) == 2)
     {
         /*
@@ -127,10 +125,6 @@ GetRings(FILE       **fp,
         /*
 		 ** Start of a (new) 'ring' ...
 		 */
-// 		if (tpbits[TRINGS] != 0)
-//		{
-//                fprintf(stderr,"GetRings() Read X(" FMTX ") Y(" FMTY ").\n", readX, readY);
-//		}
         if ((nextRing = NewRing()) == (struct ring *)NULL)
         {
             return((struct ring *)NULL);
@@ -149,27 +143,11 @@ GetRings(FILE       **fp,
             return((struct ring *)NULL);
         }
 		
-//        if (tpbits[TRINGS] != 0)
-//        {
-//            fprintf(stderr,"INFO:  (GetRings) after NewRing, ring box=\n");
-//            ShowBox(&nextRing->ringbox);
-//            fprintf(stderr,"       (GetRings) ring diamond=\n");
-//            ShowDiamond(&nextRing->ringdiamond);
-//            fprintf(stderr,"       (GetRings) outer box=\n");
-//            ShowBox(Box);
-//            fprintf(stderr,"       (GetRings) outer diamond=\n");
-//            ShowDiamond(Diamond);
-//        }
         
         /* TODO
 		 ** Check 'cnt' to make sure we got 3 or more points ...
 		 */
         nextRing->cnt = nextRing->pts->prev->pos + 1;
-//        if (tpbits[TRINGS] != 0)
-//        {
-//            fprintf(stderr,"INFO:  (GetRings) after NewRing, cnt=%d\n",
-//                    nextRing->cnt);
-//        }
 		
         /*
 		 ** Successfully read a Ring ... Add this new 'ring' to the rings list
@@ -224,16 +202,6 @@ GetRings(FILE       **fp,
         thisRing = nextRing;
     }
 	
-//	if (tpbits[TRINGS] != 0)
-//	{
-//            fprintf(stderr,"(GetRings) Found (%d) rings\n", ringCnt);
-//	}
-	
-//    ShowRings(startRing);        /* DEBUG */
-    
-//    ShowRingBoxes(startRing);    /* DEBUG */
-    
-//    ShowRingDiamonds(startRing); /* DEBUG */
     
 	
     return(startRing);
@@ -258,10 +226,6 @@ BuildWhereRing(FILE        **fp,
     /*
 	 ** For each 'ring' in the circular linked list
 	 */
-//	if (tpbits[TWHERE] != 0)
-//	{
-//            fprintf(stderr,"Build WHERE (ring)\n"); 
-//	}
     while (thisRing != startRing)
     {
         /*
@@ -292,10 +256,6 @@ BuildWhereRing(FILE        **fp,
 		 */
         if (thisRing->next == (struct ring *)NULL)
         {
-//			if (tpbits[TWHERE] != 0)
-//			{
-//                    fprintf(stderr,"          **** Circle Incomplete ****\n");
-//			}
             thisRing = startRing;  /* Force Premature Exit */
         }
         else
@@ -333,66 +293,35 @@ setBoxDiamond(struct ring *thisRing)
 			thisRing->ringdiamond.westmost.y = startPoint->pt.y;
 			thisRing->ringdiamond.eastmost.x = startPoint->pt.x;
 			thisRing->ringdiamond.eastmost.y = startPoint->pt.y;
-//            if (tpbits[TDIAMND] != 0)
-//            {
-//                fprintf(stderr,"INFO: (setBoxDiamond) First point is (" FMTX
-//                        "," FMTY ")\n",startPoint->pt.x,startPoint->pt.y);
-//            }
         }
 		else 
 		{
 			/* This is not the first point in the ring - calculate
 			 * the box and diamond limits
 			 */
-//            if (tpbits[TDIAMND] != 0)
-//            {
-//                fprintf(stderr,
-//                        "INFO: (setBoxDiamond) Next point considered is ("
-//                        FMTX "," FMTY ")\n",thisPoint->pt.x,thisPoint->pt.y);
-//            }
 			if (thisPoint->pt.x < thisRing->ringbox.min.x)
 			{
 				thisRing->ringbox.min.x = thisPoint->pt.x;
 				thisRing->ringdiamond.westmost.x = thisPoint->pt.x;
 				thisRing->ringdiamond.westmost.y = thisPoint->pt.y;
-//                if (tpbits[TDIAMND] != 0)
-//                {
-//                    fprintf(stderr,
-//                            "INFO: (setBoxDiamond) is new box min x / diamond westmost\n");
-//                }
 			}
 			if (thisPoint->pt.x > thisRing->ringbox.max.x)
 			{
 				thisRing->ringbox.max.x = thisPoint->pt.x;
 				thisRing->ringdiamond.eastmost.x = thisPoint->pt.x;
 				thisRing->ringdiamond.eastmost.y = thisPoint->pt.y;
-//                if (tpbits[TDIAMND] != 0)
-//                {
-//                    fprintf(stderr,
-//                            "INFO: (setBoxDiamond) is new box max x / diamond eastmost\n");
-//                }
 			}
 			if (thisPoint->pt.y > thisRing->ringbox.max.y)
 			{
 				thisRing->ringbox.max.y = thisPoint->pt.y;
 				thisRing->ringdiamond.top.x = thisPoint->pt.x;
 				thisRing->ringdiamond.top.y = thisPoint->pt.y;
-//                if (tpbits[TDIAMND] != 0)
-//                {
-//                    fprintf(stderr,
-//                            "INFO: (setBoxDiamond) is new box max y / diamond top\n");
-//                }
 			}
 			if (thisPoint->pt.y < thisRing->ringbox.min.y)
 			{
 				thisRing->ringbox.min.y = thisPoint->pt.y;
 				thisRing->ringdiamond.bottom.x = thisPoint->pt.x;
 				thisRing->ringdiamond.bottom.y = thisPoint->pt.y;
-//                if (tpbits[TDIAMND] != 0)
-//                {
-//                    fprintf(stderr,
-//                            "INFO: (setBoxDiamond) is new box min y / diamond bottom\n");
-//                }
 			}
 		}
         /*
@@ -401,10 +330,6 @@ setBoxDiamond(struct ring *thisRing)
 		 */
         if (thisPoint->next == (struct points *)NULL)
         {
-//			if (tpbits[TRINGS] != 0)
-//			{
-//                    fprintf(stderr,"          **** Circle Incomplete ****\n");
-//			}
             thisPoint = startPoint;  /* Force Premature Exit */
         }
         else
@@ -448,19 +373,6 @@ ringDirection(struct ring  *thisRing)
     /*
 	 ** For each 'points' in the circular linked list
 	 */
-//	if (tpbits[TRINGS] != 0)
-//	{
-//            fprintf(stderr,"Ring Direction:-\n");
-//	}
-    /* START DEBUG */
-//    if (tpbits[TRINGS] != 0)
-//    {
-//        fprintf(stderr,"DEBUG: START ringDirection, ring= %p, box=\n",thisRing);
-//        ShowBox(&thisRing->ringbox);
-//        fprintf(stderr,"       diamond=\n");
-//        ShowDiamond(&thisRing->ringdiamond);
-//    }
-    /* END DEBUG   */
     while (thisPoint != startPoint)
     {
         /*
@@ -482,76 +394,41 @@ ringDirection(struct ring  *thisRing)
 			thisRing->ringdiamond.westmost.y = startPoint->pt.y;
 			thisRing->ringdiamond.eastmost.x = startPoint->pt.x;
 			thisRing->ringdiamond.eastmost.y = startPoint->pt.y;
-//            if (tpbits[TRINGS] != 0)
-//            {
-//                fprintf(stderr,"INFO: (ringDirection) First point is (" FMTX
-//                    "," FMTY ")\n",startPoint->pt.x,startPoint->pt.y);
-//            }
         }
 		else 
 		{
 			/* This is not the first point in the ring - calculate
 			 * the box and diamond limits
 			 */
-//            if (tpbits[TRINGS] != 0)
-//            {
-//            fprintf(stderr,"INFO: (ringDirection) Next point considered is ("
-//                    FMTX "," FMTY ")\n",thisPoint->pt.x,thisPoint->pt.y);
-//            }
 			if (thisPoint->pt.x < thisRing->ringbox.min.x)
 			{
 				thisRing->ringbox.min.x = thisPoint->pt.x;
 				thisRing->ringdiamond.westmost.x = thisPoint->pt.x;
 				thisRing->ringdiamond.westmost.y = thisPoint->pt.y;
-//                if (tpbits[TRINGS] != 0)
-//                {
-//                fprintf(stderr,
-//                        "INFO: (ringDirection) is new box min x / diamond westmost\n");
-//                }
 			}
 			if (thisPoint->pt.x > thisRing->ringbox.max.x)
 			{
 				thisRing->ringbox.max.x = thisPoint->pt.x;
 				thisRing->ringdiamond.eastmost.x = thisPoint->pt.x;
 				thisRing->ringdiamond.eastmost.y = thisPoint->pt.y;
-//                if (tpbits[TRINGS] != 0)
-//                {
-//                fprintf(stderr,
-//                        "INFO: (ringDirection) is new box max x / diamond eastmost\n");
-//                }
 			}
 			if (thisPoint->pt.y > thisRing->ringbox.max.y)
 			{
 				thisRing->ringbox.max.y = thisPoint->pt.y;
 				thisRing->ringdiamond.top.x = thisPoint->pt.x;
 				thisRing->ringdiamond.top.y = thisPoint->pt.y;
-//                if (tpbits[TRINGS] != 0)
-//                {
-//                fprintf(stderr,
-//                        "INFO: (ringDirection) is new box max y / diamond top\n");
-//                }
 			}
 			if (thisPoint->pt.y < thisRing->ringbox.min.y)
 			{
 				thisRing->ringbox.min.y = thisPoint->pt.y;
 				thisRing->ringdiamond.bottom.x = thisPoint->pt.x;
 				thisRing->ringdiamond.bottom.y = thisPoint->pt.y;
-//                if (tpbits[TRINGS] != 0)
-//                {
-//                fprintf(stderr,
-//                        "INFO: (ringDirection) is new box min y / diamond bottom\n");
-//                }
 			}
 		}
 		
         /*
 		 ** Add up the angles ...
 		 */
-//        if (tpbits[TRINGS] != 0)
-//        {
-//            fprintf(stderr,"INFO: (ringDirection) angle %f plus angle %f\n",
-//                angleTot,thisPoint->angle);
-//        }
         angleTot = angleTot + thisPoint->angle;
 		pointcnt++;
 		
@@ -561,10 +438,6 @@ ringDirection(struct ring  *thisRing)
 		 */
         if (thisPoint->next == (struct points *)NULL)
         {
-//			if (tpbits[TRINGS] != 0)
-//			{
-//                    fprintf(stderr,"          **** Circle Incomplete ****\n");
-//			}
             thisPoint = startPoint;  /* Force Premature Exit */
         }
         else
@@ -579,8 +452,11 @@ ringDirection(struct ring  *thisRing)
                 if ((abs(xprev - thisPoint->pt.x) < tolerance) ||
                     (abs(yprev - thisPoint->pt.y) < tolerance))
                 {
-                    fprintf(stderr, "ERROR: Previous point (%d, %d) in ring is\n"
-                            "       within tolerance (%d) of this point (%d, %d)\n"
+                    fprintf(stderr, 
+                            "ERROR: Previous point (" FMTX ", " FMTY 
+                            ") in ring is\n"
+                            "       within tolerance (%d) of this point (" FMTX 
+                            ", " FMTY ")\n"
                             "       Run terminates.\n", xprev, yprev, tolerance,
                             thisPoint->pt.x, thisPoint->pt.y);
                     exit (FAIL_STRICT);
@@ -597,10 +473,6 @@ ringDirection(struct ring  *thisRing)
 	 ** and if it's -2PI it's Anticlockwise ... but there may be a few decimal
 	 ** places out ...
 	 */
-//    if (tpbits[TRINGS] != 0)
-//    {
-//        fprintf(stderr, "INFO: (ringDirection) total angle is %f\n",angleTot);
-//    }
     if (angleTot < maxangle && angleTot > minangle)
     {
         thisRing->dir = RINGROTCW;
@@ -621,7 +493,8 @@ ringDirection(struct ring  *thisRing)
         if (angleTot > 0)
         {
             thisRing->dir = RINGROTCW;
-            fprintf(stderr,"Warning: fix - Ring [%p] forced clockwise\n",thisRing);
+            fprintf(stderr, "Warning: fix - Ring [%p] forced clockwise\n",
+                    thisRing);
         }
         else 
         {
@@ -631,16 +504,6 @@ ringDirection(struct ring  *thisRing)
         }
         /* END DEBUG */
     }
-    /* START DEBUG */
-//    if (tpbits[TRINGS] != 0)
-//    {
-//        fprintf(stderr,"DEBUG: END ringDirection, ring= %p, %d points, box=\n",
-//                thisRing,pointcnt);
-//        ShowBox(&thisRing->ringbox);
-//        fprintf(stderr,"       diamond=\n");
-//        ShowDiamond(&thisRing->ringdiamond);
-//    }
-    /* END DEBUG   */
 }
 
 
@@ -657,20 +520,12 @@ AllDirections (int ringCnt, struct ring *rings)
     struct ring *thisRing = (struct ring *)NULL;
     int i;
     
-//    if (tpbits[TALLDIR] != 0)
-//    {
-//        fprintf(stderr, "DEBUG: ***** START AllDirections *****\n");
-//    }
     thisRing = rings;
     for (i=0;i<ringCnt;i++)
     {
         ringDirection(thisRing);
         thisRing = thisRing->next;
     }
-//    if (tpbits[TALLDIR] != 0)
-//    {
-//        fprintf(stderr, "DEBUG: ***** END AllDirections *****\n");
-//    }
 }    
 
 /*
@@ -699,6 +554,7 @@ ringNesting(int ringCnt, struct ring *rings)
     struct points *aLine;
     int isfirstP = 0;
     int isfirstL = 0;
+    int touching = 0;
 	int i, j; /* work variables */
 	
 	/*
@@ -734,14 +590,21 @@ ringNesting(int ringCnt, struct ring *rings)
 	 ** is both inside B's box and outside B's diamond.
 	 */
 	
+    /* DEBUG PRINT: */
+    if (tprint != 0)
+    {
+        fprintf(stderr,"\nRing Nesting:\n");
+    }
+    /* END DEBUG PRINT */
+    
 	/* Get enough memory for the array: */
-	nesting = malloc(ringCnt*(ringCnt-1)*sizeof(int));
+	nesting = malloc(ringCnt*(ringCnt/*-1*/)*sizeof(int));
 	/* 
 	 * If we could not get enough memory, return the NULL pointer
 	 */
 	if (nesting == (int *)NULL)
 	{
-		fprintf(stderr, "ERROR: Could not evaluate ring nesting - mo memory\n");
+		fprintf(stderr, "ERROR: Could not evaluate ring nesting - no memory\n");
 		return nesting;
 	}
 	
@@ -789,6 +652,8 @@ ringNesting(int ringCnt, struct ring *rings)
 			
 			/* 0) Default mark inner as inside outer: */
 			*((nesting)+(ringCnt*inner+outer)) = 2;
+            /*    ...and also that they are NOT touching: */
+            touching = 0;
 			
             /*
              *  If the two rings are the same (i.e. inner == outer) then
@@ -804,13 +669,6 @@ ringNesting(int ringCnt, struct ring *rings)
             firstPoint = thisPoint;
             isfirstP = 0;
             aPoints = innerRing->pts;
-			/* START DEBUG */
-//			if (tpbits[TRINGS] != 0)
-//			{
-//                    fprintf(stderr, "First point is (" FMTX ", " FMTY ")\n",
-//                       thisPoint.x, thisPoint.y);
-//			}
-			/* END DEBUG */
 			
             while (isfirstP == 0)
             {
@@ -858,6 +716,19 @@ ringNesting(int ringCnt, struct ring *rings)
                         *((nesting)+(ringCnt*inner+outer)) = -2;
                         goto foundnest;
                     }
+                    else if (i == 0)
+                    {
+                        /*
+                         *  >>>> INSERT MORE CODE HERE >>>>
+                         *  This is the "touching" case - that is, we know that
+                         *  the point is on the line (or a projection of that
+                         *  line).
+                         *  ?? do we have to determine whether the point is on
+                         *  a projection of the line?? I think we do - because
+                         *  only when the point is ON the line do we have the
+                         *  case of "touching".
+                         */
+                    }
                     /*
                      *  Get the next line in the sequence, and check whether we
                      *  are back to the beginning of the outer ring:
@@ -871,13 +742,23 @@ ringNesting(int ringCnt, struct ring *rings)
                 /* 5) get next point of inner */
                 aPoints = aPoints->next;
                 thisPoint = aPoints->pt;
-                if ((thisPoint.x == firstPoint.x) && (thisPoint.y == firstPoint.y))
+                if ((thisPoint.x == firstPoint.x) && 
+                    (thisPoint.y == firstPoint.y))
                 {
                     isfirstP = 1;
                 }
             }
 			/* 6) end of calculation for *this* inner ring: */
 		foundnest:
+            /*
+             *  If we have the "touching" case, then divide the indicator
+             *  by two, to record that fact:
+             */
+            if (touching != 0)
+            {
+                *((nesting)+(ringCnt*inner+outer)) = 
+                *((nesting)+(ringCnt*inner+outer)) / 2;
+            }
             /*
              *  Now point to the next outer ring, and go back to try it
              */
@@ -888,6 +769,21 @@ ringNesting(int ringCnt, struct ring *rings)
          */
         innerRing = innerRing->next; 
 	}
+    
+    /* DEBUG PRINT: */
+    if (tprint != 0)
+    {
+        for (inner=1; (inner<=ringCnt); inner++)
+        {
+            for (outer=1; (outer<=ringCnt); outer++)
+            {
+                fprintf(stderr,"Nesting: in=%d out=%d nest=%d\n",inner,outer,
+                        *((nesting)+(ringCnt*inner+outer)));
+            }
+        }
+    }
+    /* END DEBUG PRINT */
+    
 	return nesting;
 }
 
@@ -959,10 +855,6 @@ ShowRings(struct ring *startRing)
     /*
 	 ** For each 'ring' in the circular linked list
 	 */
-//	if (tpbits[TRINGS] > 1)
-//	{
-//            fprintf(stderr,"Display Rings:- %p, %p\n", startRing, thisRing);
-//	}
     while (thisRing != startRing)
     {
         /*
@@ -972,11 +864,6 @@ ShowRings(struct ring *startRing)
         if (thisRing == (struct ring *)NULL)
         {
             thisRing = startRing;
-//			if (tpbits[TRINGS] != 0)
-//			{
-//                    fprintf(stderr,
-//                            "    Pos  Dircton Operand Cnt  (FirstX,FirstY) [RingAddress]\n");
-//			}
         }
 		
         switch(thisRing->dir)
@@ -999,16 +886,6 @@ ShowRings(struct ring *startRing)
         /*
 		 ** Print out the info
 		 */
-//		if (tpbits[TRINGS] != 0)
-//		{
-//                fprintf(stderr,
-//                    "    (%2d) (%d)[%s] (%d)[%s] (%2d) (" FMTX "," FMTY ") [%p]\n",
-//                   thisRing->pos,
-//                   thisRing->dir, direction,
-//                   thisRing->opand, opand,
-//                   thisRing->cnt,
-//                   thisRing->pts->pt.x, thisRing->pts->pt.y, thisRing);
-//		}
 		
         
         /*
@@ -1017,10 +894,6 @@ ShowRings(struct ring *startRing)
 		 */
         if (thisRing->next == (struct ring *)NULL)
         {
-//			if (tpbits[TRINGS] != 0)
-//			{
-//                    fprintf(stderr, "          **** Circle Incomplete ****\n");
-//			}
             thisRing = startRing;  /* Force Premature Exit */
         }
         else
@@ -1038,23 +911,12 @@ ShowRingBoxes(struct ring *startRing)
     /*
 	 ** For each 'ring' in the circular linked list
 	 */
-//	if (tpbits[TRINGS] > 1)
-//	{
-//            fprintf(stderr, "Display Ring Boxes:- %p, %p\n", 
-//                    startRing, thisRing);
-//	}
     while (thisRing != startRing)
     {
         if (thisRing == (struct ring *)NULL)
         {
             thisRing = startRing;
         }
-//        if (tpbits[TRINGS] != 0)
-//        {
-//            fprintf(stderr, "DEBUG: About to ShowBox thisRing = %p\n",
-//                thisRing);
-//            ShowBox(&(thisRing->ringbox));
-//        }
         
         /*
 		 ** Step to the next 'ring' in the circular linked list
@@ -1062,10 +924,6 @@ ShowRingBoxes(struct ring *startRing)
 		 */
         if (thisRing->next == (struct ring *)NULL)
         {
-//			if (tpbits[TRINGS] != 0)
-//			{
-//                    fprintf(stderr, "          **** Circle Incomplete ****\n");
-//			}
             thisRing = startRing;  /* Force Premature Exit */
         }
         else
@@ -1082,11 +940,6 @@ ShowRingDiamonds(struct ring *startRing)
     /*
 	 ** For each 'ring' in the circular linked list
 	 */
-//	if (tpbits[TDIAMND] > 1)
-//	{
-//            fprintf(stderr, "Display Ring Diamonds:- %p, %p\n",
-//                    startRing, thisRing);
-//	}
     while (thisRing != startRing)
     {
         if (thisRing == (struct ring *)NULL)
@@ -1100,10 +953,6 @@ ShowRingDiamonds(struct ring *startRing)
 		 */
         if (thisRing->next == (struct ring *)NULL)
         {
-//			if (tpbits[TRINGS] != 0)
-//			{
-//                    fprintf(stderr, "          **** Circle Incomplete ****\n");
-//			}
             thisRing = startRing;  /* Force Premature Exit */
         }
         else
@@ -1116,5 +965,5 @@ ShowRingDiamonds(struct ring *startRing)
 
 /*
  ** End of File
- ** Copyright (c) 2013, 2012, 2011 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
+ ** Copyright (c) 2011-2013 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
  */

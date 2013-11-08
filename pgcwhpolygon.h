@@ -1,5 +1,5 @@
 /*
- ** Copyright (c) 2013, 2012, 2011 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
+ ** Copyright (c) 2011-2013 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
  **
  ** pgcwhpolygon.h (part of pgcwhpolygon)
  ** whpolymain.h (part of whpolygon)
@@ -9,8 +9,8 @@
 #ifndef POLYMAINH
 #define POLYMAINH 
 
-#define PROGRAM_VERSION   "0.39"
-#define PROGRAM_EDIT_DATE "20130617:16.25"
+#define PROGRAM_VERSION   "0.43"
+#define PROGRAM_EDIT_DATE "20130906:12.00"
 
 /*
  **  Exit conditions. Note that these are more fully described in 
@@ -111,7 +111,7 @@ int corners;
  */
 
 /*
- **  A point has an X xoordinate and a Y coordinate - but we
+ **  A point has an X coordinate and a Y coordinate - but we
  **  do NOT know, for all users, what computational type these
  **  are expressed as. Hence we have COORDT which is the type
  **  of these fields, and FMTX and FMTY which may be used within
@@ -124,8 +124,8 @@ int corners;
 #define LONGPOINT "long"
 #ifdef LONGPOINT
 #define COORDT long       /* C type for coordinates */
-#define FMTX   "%dl"      /* matching printf format */
-#define FMTY   "%dl"      /* matching printf format */
+#define FMTX   "%ld"      /* matching printf format */
+#define FMTY   "%ld"      /* matching printf format */
 #define XYMAX  LONG_MAX
 #define XYMIN  LONG_MIN
 #else
@@ -245,37 +245,11 @@ void           AllDirections (int ringCnt, struct ring *rings);
 int           *ringNesting (int ringCnt, struct ring *thisRing); 
 int            inDiamond(struct diamond testDiamond, struct point testPoint); 
 
-
-/* Forward declaration of Utility procedures: */
 int         tfclose     (FILE  *a);
-int16_t		swap_int16	(int16_t a);
-uint16_t	swap_uint16 (uint16_t a);
-int32_t		swap_int32	(int32_t a);
-uint32_t	swap_uint32	(uint32_t a);
-double      swap_double (unsigned long long a);
-
-/* 32-bit Endian definition of *this* machine: */
-/*
- * Note that this definition can be
- * (a) extended to cover other formats, such as PDP (0xad), and
- * (b) altered to err at compile time if the format is not
- *     recognised (remove UNDEFINED and uncomment the assert)
- */
-static uint32_t endianness = 0xdeadbeef; 
-enum ENDIANNESS { BIG, LITTLE, UNDEFINED };
-
-#define ENDIANNESS ( *(const char *)&endianness == (char) 0xef ? LITTLE \
-: *(const char *)&endianness == (char) 0xde ? BIG \
-: UNDEFINED )
-// : assert(0))
-/*
- * This is tested by (for example):
- *   if (ENDIANNESS == BIG)...
- */
 
 #endif
 
 /*
  ** End of File
- ** Copyright (c) 2013, 2012, 2011 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
+ ** Copyright (c) 2011-2013 Westheimer Energy Consultants Ltd ALL RIGHTS RESERVED
  */

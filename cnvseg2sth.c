@@ -1,9 +1,9 @@
 /*******************************************************************************
  *  cnvseg2sth.c		
- *  Copyright 2013, 2012 Westheimer Energy Consulting Ltd. All rights reserved.
+ *  Copyright 2012-2013 Westheimer Energy Consulting Ltd. All rights reserved.
  ******************************************************************************/
 
-/* This file last updated 20130603:1015 */
+/* This file last updated 20131008:1305 */
 
 /*
  *   This program's parameter are all keyword, not positional, parameters.
@@ -186,6 +186,11 @@
  *     Bug fix for -b 0
  *     Interchange -D and -d
  *
+ *  Modifications version 0.994
+ *     Sundry refactorization - no functional changes
+ *
+ *  Modifications version 1.000
+ *     Change of X,Y coordinates from 32-bit int to 64-bit bigint
  */
 
 /*
@@ -300,6 +305,9 @@
 #include <math.h>         /* for sqrt()            */
 #include <netinet/in.h>   /* for htonl() ntohl()   */
 
+#include "cnvswap.h"
+#include "cnvendian.h"
+#include "cnvfloat.h"
 #include "cnvseg2sth.h"
 
 #define DEBUG_LEV 0
@@ -322,6 +330,10 @@ int main (int argc, char *argv[])
 	char *LongShort = (char *)NULL; /* LONGname or SHORTname      */
 	char *MaxSampct = (char *)NULL; /* Include maxsamp count Y/N  */
     char *oformat = (char *)NULL;  /* Output floating-point format*/
+    char *ixcoord = (char *)NULL;  /* X co-ord. displacement      */
+    char *iycoord = (char *)NULL;  /* Y co-ord. displacement      */
+	char *cxposn = (char *)NULL;   /* Pointer to X co-ord in bfr  */
+	char *cyposn = (char *)NULL;   /* Pointer to Y co-ord in bfr  */
 	
     FILE *ipf   = (FILE *)NULL;    /* The input file              */
     FILE *opf   = (FILE *)NULL;    /* The primary output file     */
@@ -356,6 +368,8 @@ int main (int argc, char *argv[])
     short wthpre = 0;              /* Writable vn. of Trace header prefix  */
     short wtdpre = 0;              /* Writable vn. of Trace data prefix    */
     short floatconvert = NOCONVERT;/* Floating point conversion flag       */
+	short xdisp = 0;               /* Displacement of 32-bit X coordinate  */
+	short ydisp = 0;               /* Displacement of 32-bit Y coordinate  */
     /*  The values in floatconvert mean:                                   */
     /*    0   No conversion requested or no conversion to be performed     */
     /*        NOCONVERT                                                    */
@@ -386,6 +400,9 @@ int main (int argc, char *argv[])
     char FHtype[] = ".ifh";        /* File type for File Header file       */
     char THtype[] = ".ith";        /* File type for Trace Header file      */
     char TDtype[] = ".itd";        /* File type for Trace Data file        */
+
+	int ZERO32 = 0;                /* 32-bit zero value                    */
+//	long int ZERO64 = 0;           /* 64-bit zero value                    */
 	
 	int  i, j, k, l;               /* Work variables                       */
     long samplecount = 0;          /* Count of samples in all of data      */
@@ -417,7 +434,7 @@ int main (int argc, char *argv[])
 	int  maxsampval  = 0;          /* Value of extra sample count          */
 	int  wmaxsampval = 0;          /* Endian correct version of maxsampval */
 	int  dimensions  = TWODIM;     /* Two dimensions by default            */
-	int  thisendian  = ISLITTLE;   /* Endianicty of *this* machine         */
+	int  thisendian  = LITTLE;     /* Default Endianicty of *this* machine */
     int  datatype    = 0;          /* Type of this SEGY data, from file hdr*/
     int  savedatatype= 0;          /* Saved copy of datatype for comparison*/
     int  typelength  = 4;          /* Length of *this* data type, in bytes */
@@ -430,20 +447,6 @@ int main (int argc, char *argv[])
     int  charinopb   = 0;          /* Number of characters in buffer opbuf */
     int  savecharinopb = 0;        /* Temporary saved copy of charinopb    */
 	
-	/* Debug Trace flags: */
-//	short t1=0, t2=0, t4=0, t8=0, t16=0, t32=0, t64=0, t128=0, t256=0, t512=0;
-//	short t1024=0, t2048=0, t4096=0, t8192=0, t16384=0, t32768=0;
-//#define t3 t32
-//#define t5 t64
-//#define t6 t128
-//#define t7 t256
-//#define t9 t512
-//#define t10 t1024
-//#define t11 t2048
-//#define t12 t4096
-//#define t13 t8192
-//#define t14 t16384
-//#define t15 t32768
 	
 	char input[32760];   /* Input buffer                   */
 //    /* unsigned */ char output[65400];  /* Output buffer, when converting */
@@ -453,10 +456,6 @@ int main (int argc, char *argv[])
             "Westheimer Energy Consultants Ltd.\n"
             "All Rights Reserved\n\n");
 	
-	/*
-	 *  Set to default debug level:
-	 */
-//	tprint = DEBUG_LEV;
 	
     /*  ENDIANNESS  */
     
@@ -465,11 +464,11 @@ int main (int argc, char *argv[])
 	 */
 	if (ENDIANNESS == BIG)
 	{
-		thisendian = ISBIG;
+		thisendian = BIG;
 	}
 	else if (ENDIANNESS == LITTLE)
 	{
-		thisendian = ISLITTLE;
+		thisendian = LITTLE;
 	}
 	else 
 	{
@@ -530,7 +529,7 @@ int main (int argc, char *argv[])
 	/*
      *  Read in and initially process each command line parameter:
      */
-    while ((c = getopt(argc, argv, ":i:o:s:d:l:m:p:L:t:T:b:c:F:D:R:vj0123")) != -1)
+    while ((c = getopt(argc, argv, ":i:o:s:d:l:m:p:L:t:T:b:c:F:D:R:x:y:vj0123")) != -1)
     {
         switch(c)
         {
@@ -559,6 +558,29 @@ int main (int argc, char *argv[])
             /* Include (or not) the maximum sample count (Cristina's field): */
 			case 'm':
 				MaxSampct = optarg;
+				break;
+
+			/* X and Y co-ord displacements in the incoming data: */
+			case 'x':
+				ixcoord = optarg;
+				xdisp = atoi(ixcoord);
+				cxposn = &input[xdisp-1];
+				if (ydisp == 0)
+				{
+					ydisp = xdisp + 4;
+					cyposn = &input[ydisp-1];
+				}
+				break;
+
+			case 'y':
+				iycoord = optarg;
+				ydisp = atoi(iycoord);
+				cyposn = &input[ydisp-1];
+				if (xdisp == 0)
+				{
+					xdisp = ydisp - 4;
+					cxposn = &input[xdisp-1];
+				}
 				break;
                 
             /* Permit (or not) overwriting pre-existing files: */
@@ -597,7 +619,7 @@ int main (int argc, char *argv[])
                  *  records. It must be in big-endian format, so swap it here,
                  *  if necessary:
                  */
-                if (thisendian == ISLITTLE)
+                if (thisendian == LITTLE)
                 {
                     headerbrick = swap_uint16(headerbrick);
                 }
@@ -638,26 +660,6 @@ int main (int argc, char *argv[])
 				tprint = atoi(optarg);
                 fprintf(stderr,
                         "WARNING: trace flags (-t) not for production\n");
-				/*
-				 * Set the trace flags:
-				 */
-//				i		= tprint;
-//				t1		= i%2; i = i/2;
-//				t2		= i%2; i = i/2;
-//				t4		= i%2; i = i/2;
-//				t8		= i%2; i = i/2;
-//				t16		= i%2; i = i/2;
-//				t32		= i%2; i = i/2;
-//				t64		= i%2; i = i/2;
-//				t128	= i%2; i = i/2;
-//				t256	= i%2; i = i/2;
-//				t512	= i%2; i = i/2;
-//				t1024	= i%2; i = i/2;
-//				t2048	= i%2; i = i/2;
-//				t4096	= i%2; i = i/2;
-//				t8192	= i%2; i = i/2;
-//				t16384	= i%2; i = i/2;
-//				t32768	= i%2; i = i/2;
 				break;
 			
             /* Extra 'field to copy' position: */
@@ -737,7 +739,6 @@ int main (int argc, char *argv[])
         }
         /* Copy previous argument for any future error messages: */
         optopt = c;
-//        fprintf(stderr, "DEBUG: optopt = %c\n",optopt);
     }
 	
     /*
@@ -753,7 +754,6 @@ int main (int argc, char *argv[])
         /*
 		 ** Does the Input file exist
 		 */
-//        if (t1 !=0 ) fprintf(stderr, "Opening Input File  [%s]\n", ifile);
 		if ( strcmp(ifile,"stdin") ==0 )
 		{
 			ipf = stdin;
@@ -785,7 +785,6 @@ int main (int argc, char *argv[])
 		 ** We could see if the Output File already exists - overwrite flag?
 		 ** Open the output file
 		 */
-//        if (t1 != 0) fprintf(stderr, "Opening Output File [%s]\n", ofile);
 		if ( strcmp(ofile, "stdout") ==0 )
 		{
 			opf = stdout;
@@ -948,8 +947,6 @@ int main (int argc, char *argv[])
     }
     if (bricklen != 0)
     {
-//        fprintf(stderr,"DEBUG: bricklen = %d maxsamp = %d mbs = %d\n",
-//                bricklen, maxsamp, mbs);
         maxsamp = mbs;
         if (maxsamp == 0) maxsamp = MAXSAMP;
     }
@@ -958,7 +955,7 @@ int main (int argc, char *argv[])
      * Construct the canonical form of bricksize to write in the trace headers:
      */
     Wbsize = mbs;
-    if (thisendian == ISLITTLE)
+    if (thisendian == LITTLE)
     {
 	    Wbsize = swap_uint16(Wbsize);
     }
@@ -1013,6 +1010,14 @@ int main (int argc, char *argv[])
         }
 
     }
+	if ((xdisp == 0) && (cmderr == 0))
+	{
+		fprintf(stderr, "Output is Version 1 format, with Chunk no. and no X/Y in TH\n");
+	}
+	else
+	{
+		fprintf(stderr, "Output Vn. 2 format, 64-bit X/Y from 32-bit [%d] and [%d]\n",xdisp,ydisp);
+	}
     
     /*
 	 ** If something went wrong, whinge and die ...
@@ -1033,6 +1038,8 @@ int main (int argc, char *argv[])
 		fprintf(stderr, "   -m <Y/N>        Include maxsamp    [Default Y (Yes)]\n");
 		fprintf(stderr, "   -p <position>   Extra index field  [Default none - up to %d allowed]\n",MAXP);
 		fprintf(stderr, "   -L <length>     Extra field length [Default length 4]\n");
+        fprintf(stderr, "   -x <position>   X co-ord field     [Default 0 - not used]\n");
+        fprintf(stderr, "   -y <position>   Y co-ord field     [Default 0 - not used]\n");
 //		fprintf(stderr, "   -T <number>     Trace print level  [Def 0]\n");
 		fprintf(stderr, "   -c <chunksize>  Data Size in Chunk [Default 0 - all data]\n");
         fprintf(stderr, "   -F <format>     Float output i / e [Default no conversion]\n");
@@ -1049,12 +1056,10 @@ int main (int argc, char *argv[])
         if ((ipf != (FILE *)NULL) && ( strcmp(ifile, "stdin") != 0 ))
         {
             tfclose(ipf);
-//			if (t1 != 0) fprintf(stderr, "Closed input.\n");
         }
         if ((opf != (FILE *)NULL) && ( strcmp(ofile, "stdout") != 0 ))
         {
             tfclose(opf);
-//			if (t1 != 0) fprintf(stderr, "Closed output.\n");	
         }
         exit(PARAM_ERROR);
     }
@@ -1130,7 +1135,7 @@ int main (int argc, char *argv[])
 
 
 	fprintf(stderr, "Endianness for this machine is ");
-	if (thisendian == ISLITTLE)
+	if (thisendian == LITTLE)
 	{
 		fprintf (stderr, "LITTLE\n");
 	}
@@ -1139,12 +1144,6 @@ int main (int argc, char *argv[])
 		fprintf (stderr, "BIG\n");
 	}
 
-    /*
-     *  Do NOT tell the user about debug trace level - this is for
-     *  developers only:
-     */
-//	fprintf(stderr, "Trace print level:    %d\n\n", tprint);
-	
 	
 	/*
 	 *   MAIN CODE
@@ -1228,7 +1227,7 @@ int main (int argc, char *argv[])
         if ((opffh = fopen(temp, "w" )) == (FILE *)NULL)
         {
             fprintf(stderr, 
-                    "ERROR: Unable to open output file header file (-o) [%s]\n", 
+                    "ERROR: Unable to open output File Header file (-o) [%s]\n", 
                     temp);
             exit (BAD_FILE_HEADER);
         }
@@ -1250,7 +1249,7 @@ int main (int argc, char *argv[])
             if ((opfth = fopen(temp, "w" )) == (FILE *)NULL)
             {
                 fprintf(stderr, 
-                        "ERROR: Unable to open output trace header file (-o) [%s]\n", 
+                        "ERROR: Unable to open output Trace Header file (-o) [%s]\n", 
                         temp);
                 exit (BAD_TRACE_HEADER);
             }
@@ -1272,7 +1271,7 @@ int main (int argc, char *argv[])
             if ((opftd = fopen(temp, "w" )) == (FILE *)NULL)
             {
                 fprintf(stderr, 
-                        "ERROR: Unable to open output trace data file (-o) [%s]\n", 
+                        "ERROR: Unable to open output Trace Data file (-o) [%s]\n", 
                         temp);
                 exit (BAD_TRACE_DATA);
             }
@@ -1373,7 +1372,7 @@ int main (int argc, char *argv[])
 	 */
     recsize = i;
     wrecsize = recsize;
-	if (thisendian == ISLITTLE)
+	if (thisendian == LITTLE)
 	{
 		wrecsize = swap_uint16 (recsize);
 	}
@@ -1396,7 +1395,7 @@ int main (int argc, char *argv[])
 	
 	/* Write out 2 byte file_seq - with endian correction */
     wfseq = fseq;
-	if (thisendian == ISLITTLE)
+	if (thisendian == LITTLE)
 	{
 		wfseq = swap_uint16(fseq);
 	}
@@ -1447,7 +1446,7 @@ int main (int argc, char *argv[])
     /* >>>>>> MODIFY THIS >>>>>> */
     opbrick = bricklen;
     wopbrick = mbs;
-    if (thisendian == ISLITTLE)
+    if (thisendian == LITTLE)
     {
         wopbrick = swap_uint16(opbrick);
     }
@@ -1459,11 +1458,6 @@ int main (int argc, char *argv[])
      *  above is encapsulation of:
      *  l = fwrite (wopbrick, 1, 2, opffh);
      */
-//    if (t2 != 0)
-//    {
-//        fprintf(stderr,"Chunk size stated is %d [%d] (bytes)\n", 
-//                opbrick, wopbrick);
-//    }
 	
 		
 	/*
@@ -1471,7 +1465,7 @@ int main (int argc, char *argv[])
 	 */
 	memcpy(&b2, &input[Fhsize+DSAMPCNT], 2);
     sampcnt = b2;
-    if (thisendian == ISLITTLE)
+    if (thisendian == LITTLE)
     {
         sampcnt = swap_uint16(sampcnt);
     }
@@ -1483,7 +1477,7 @@ int main (int argc, char *argv[])
 	 */
 	memcpy(&b2, &input[Fhsize+304], 2);
     exttrace = b2;
-    if (thisendian == ISLITTLE)
+    if (thisendian == LITTLE)
     {
         exttrace = swap_uint16(b2);
     }
@@ -1493,7 +1487,7 @@ int main (int argc, char *argv[])
      */
 	memcpy(&b2, &input[Fhsize+DDATAFMT], 2); 
     datatype = b2;
-    if (thisendian == ISLITTLE)
+    if (thisendian == LITTLE)
     {
         datatype = swap_uint16(b2);
     }
@@ -1526,8 +1520,6 @@ int main (int argc, char *argv[])
     if ((typelength != 4) && (typelength != 0))
     {
         mbb = mbs * typelength;
-//        fprintf(stderr,"DEBUG: typlength = %d maxsamp = %d mbs = %d mbb = %d\n",
-//                typelength, maxsamp, mbs, mbb);
         maxsamp = mbs;
         if (maxsamp == 0) maxsamp = MAXSAMP;
     }
@@ -1555,11 +1547,10 @@ int main (int argc, char *argv[])
     {
         opbrick = sampcnt;
     }
-    if (thisendian == ISLITTLE)
+    if (thisendian == LITTLE)
     {
         wopbrick = swap_uint16(opbrick);
     }
-    memcpy(&opbuf[savecharinopb], &wopbrick, 2);
     
     /*
      *  Now that we have read the header record we are able to determine, from
@@ -1718,11 +1709,6 @@ int main (int argc, char *argv[])
 	 *  plus the Binary file header - flush our own output buffer first:
      */
     l = fwrite (opbuf, 1, charinopb, opffh); /* Flush our output buffer */
-//    if (t3 != 0)
-//    {
-//        fprintf(stderr,"File Header displacement %d [%o]\n",
-//                charinopb,charinopb);
-//    }
 	l = fwrite (input, 1, FBhsize, opffh);   /* Copy real file header   */
     
     
@@ -1738,18 +1724,18 @@ int main (int argc, char *argv[])
 	{
 		if (jetison)
 		{
-			fprintf(stderr, "About to jetison %d auxilliary header records\n",
+			fprintf(stderr, "About to jetison %d auxilliary File Header records\n",
                     exttrace);
 			for (i=0;i<exttrace;i++)
 			{
 				l = fread(input, 1, Fhsize, ipf);
-                fprintf(stderr, "Jetisoned auxilliary header record %d\n", i+1);
+                fprintf(stderr, "Jetisoned auxilliary File Header record %d\n", i+1);
 			}
 		}
 		else 
 		{
 		    fprintf(stderr,
-                "ERROR: There are %d extra header records - not supported\n",
+                "ERROR: There are %d extra File Header records - not supported\n",
                 exttrace);
 		    exit(EXTRA_HEADERS);
 		}
@@ -1772,7 +1758,6 @@ int main (int argc, char *argv[])
     
     /*  MAIN DATA READ/WRITE LOOP  */
     
-//LOOP:
 	/* Now loop through the trace records */
 	while(readl == 0) {
 		
@@ -1825,17 +1810,6 @@ int main (int argc, char *argv[])
 		/* get number of SAMPLES per trace */
 		i = sampcnt;
 		
-		/*
-		 *  Indicate, on stderr, the number of samples in this particular
-		 *  trace record. Note that for a large SEGY file, with many traces,
-		 *  then this could be a very large amount of output! ... hence the
-         *  flag to prevent its being shown more than once:
-		 */
-//		if ((t4 != 0) && (haveshowncount == 0))
-//        {
-//            fprintf(stderr, "There are %d samples per trace \n", i);
-//            haveshowncount = 1;
-//        }
 		
 		/*  Make decision about samples here and calc size for the Trace rec. */
 		
@@ -1856,13 +1830,6 @@ int main (int argc, char *argv[])
          *  expected samples times the length of each sample:
          */
 		sampsize = sampcnt*typelength;           
-//		if ((t5 != 0) && (haveshowncount == 1))
-//        {
-//            fprintf(stderr,
-//                    "Data length expected per input record is %d bytes \n", 
-//                    sampsize);
-//            haveshowncount = 2;
-//        }
 		
 		
 		/*
@@ -1936,10 +1903,18 @@ int main (int argc, char *argv[])
             /* compute VAR size - with endian correction */
             recsize = i;
             wthpre = recsize;
-            if (thisendian == ISLITTLE)
+            if (thisendian == LITTLE)
             {
                 wthpre = swap_uint16 (recsize);
             }
+			/* We have to increase this total length by 4 if this is version 2
+ 			* of the output format, as we have (a) deleted 2 x 4 bytes, and
+ 			* (b) added 2 x 8 bytes:
+ 			*/
+			if (xdisp != 0)
+			{
+				wthpre = wthpre + 4;
+			}
         }
         
         
@@ -1964,7 +1939,7 @@ int main (int argc, char *argv[])
 		
 		/* write out 2 byte file_seq - with endian correction */
         wfseq = fseq;
-        if (thisendian == ISLITTLE)
+        if (thisendian == LITTLE)
         {
             wfseq = swap_uint16(fseq);
         }
@@ -2027,45 +2002,67 @@ int main (int argc, char *argv[])
 			}
 		}
 		
-		/* Write the -m (max samp count) field, if required: */
-		if (incmaxsamp == YESMAXSAMP)
+        /* The -m and the chunk (canonical brick) are written ONLY for Vn.
+ 		 * one of the format - otherwise we write the 64-bit X and 64-bit Y:
+ 		 */
+        if (xdisp==0)
 		{
-			if (maxsampval == 0)
+			/* Write the -m (max samp count) field, if required: */
+			if (incmaxsamp == YESMAXSAMP)
 			{
-				wmaxsampval = 0;
+				if (maxsampval == 0)
+				{
+					wmaxsampval = 0;
+				}
+				else if (thisendian == LITTLE)
+				{
+					wmaxsampval = swap_uint32(maxsampval);
+				}
+				else
+				{
+					wmaxsampval = maxsampval;
+				}
+       		    memcpy(&opbuf[charinopb], &wmaxsampval, 4);
+            	charinopb = charinopb + 4;
+           		 /*
+           		  *  above is encapsulation of:
+           		  *  l = fwrite(&wmaxsampval, 1, 4, opfth);
+           		  */
 			}
-			else if (thisendian == ISLITTLE)
-			{
-				wmaxsampval = swap_uint32(maxsampval);
-			}
-			else
-			{
-				wmaxsampval = maxsampval;
-			}
-            memcpy(&opbuf[charinopb], &wmaxsampval, 4);
-            charinopb = charinopb + 4;
-            /*
-             *  above is encapsulation of:
-             *  l = fwrite(&wmaxsampval, 1, 4, opfth);
-             */
-		}
         
-        /*
-         * Write out the canonical bricksize, in two bytes:
-         */
+        	/*
+         	* Write out the canonical bricksize, in two bytes:
+         	*/
         /* >>>>>>> MODIFY HERE >>>>>> */
 //        memcpy(&opbuf[charinopb], &Wbsize, 2);
-        memcpy(&opbuf[charinopb], &headerbrick, 2);
-        charinopb = charinopb + 2;
-        /*
-         *  above is encapsulation of:
-         *  l = fwrite (&Wbsize, 1, 2, opfth);
-         */
+        	memcpy(&opbuf[charinopb], &headerbrick, 2);
+        	charinopb = charinopb + 2;
+        	/*
+         	*  above is encapsulation of:
+         	*  l = fwrite (&Wbsize, 1, 2, opfth);
+         	*/
+		}
+		else
+		{
+            /*  This is a Version 2 form of output required, so make
+ 			 *  64-bit copies of the X and Y coordinates, using the
+ 			 *  displacements given on the command line:
+ 			 */
+			memcpy(&opbuf[charinopb], &ZERO32, 4);
+			charinopb = charinopb + 4;
+			memcpy(&opbuf[charinopb], cxposn, 4);
+			charinopb = charinopb + 4;
+			memcpy(&opbuf[charinopb], &ZERO32, 4);
+			charinopb = charinopb + 4;
+			memcpy(&opbuf[charinopb], cyposn, 4);
+			charinopb = charinopb + 4;
+			/* If there is a length calclation to perform, do it here: */
+		}
         
 		/* write out TRACE SEQUENCE - with endian correction 
          * (also known as Trace Header ID) */
         WTseq = Tseq;
-		if (thisendian == ISLITTLE)
+		if (thisendian == LITTLE)
 		{
 			WTseq = swap_uint32(Tseq);
 		}
@@ -2192,7 +2189,7 @@ int main (int argc, char *argv[])
                 /* write out VAR size - endian corrected */
                 recsize = i;
                 wtdpre = recsize;
-                if (thisendian == ISLITTLE)
+                if (thisendian == LITTLE)
                 {
                     wtdpre = swap_uint16(recsize);
                 }
@@ -2228,7 +2225,7 @@ int main (int argc, char *argv[])
                  */
                 /* File id.: */
                 wfseq = fseq;
-                if (thisendian == ISLITTLE)
+                if (thisendian == LITTLE)
                 {
                     wfseq = swap_uint16(fseq);
                 }
@@ -2254,7 +2251,7 @@ int main (int argc, char *argv[])
                  */
                 tracedataid++;
                 wtdid = tracedataid;
-                if (thisendian == ISLITTLE)
+                if (thisendian == LITTLE)
                 {
                     wtdid = swap_uint16(tracedataid);
                 }
@@ -2390,8 +2387,6 @@ int main (int argc, char *argv[])
                 opfth = opftd;
             }
         }
-//LOOPE:
-//        if (t14 != 0) fprintf(stderr, "End of LOOP E\n");
 	} /* endof read loop */
 	
 LOOPX:
@@ -2438,7 +2433,6 @@ LOOPX:
                 tfclose ( opftd );
             }
         }
-//		if (t1 != 0) fprintf(stderr, "Output file(s) closed\n");
 	}
 	
     fprintf(stderr, "End of run for %s\n", progname);
@@ -2462,64 +2456,6 @@ int tfclose (FILE *filep)
     {
         return (fclose(filep));
     }
-}
-
-/*
- **! Byte swap unsigned short
- */
-uint16_t swap_uint16( uint16_t val ) 
-{
-	return (val << 8) | (val >> 8 );
-}
-
-
-/*
- **! Byte swap short
- */
-int16_t swap_int16( int16_t val ) 
-{
-	return (val << 8) | ((val >> 8) & 0xFF);
-}
-
-/*
- **! Byte swap unsigned int
- */
-uint32_t swap_uint32( uint32_t val )
-{
-	val = ((val << 8) & 0xFF00FF00 ) | ((val >> 8) & 0xFF00FF ); 
-	return (val << 16) | (val >> 16);
-}
-
-
-/*
- **! Byte swap int
- */
-int32_t swap_int32( int32_t val )
-{
-    val = ((val << 8) & 0xFF00FF00) | ((val >> 8) & 0xFF00FF ); 
-    return (val << 16) | ((val >> 16) & 0xFFFF);
-}
-
-/*
- ** unswap using char pointers
- */
-double swap_double(unsigned long long a) 
-{
-	
-    double d;
-    unsigned char *src = (unsigned char *)&a;
-    unsigned char *dst = (unsigned char *)&d;
-	
-    dst[0] = src[7];
-    dst[1] = src[6];
-    dst[2] = src[5];
-    dst[3] = src[4];
-    dst[4] = src[3];
-    dst[5] = src[2];
-    dst[6] = src[1];
-    dst[7] = src[0];
-	
-    return d;
 }
 
 

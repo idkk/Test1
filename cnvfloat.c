@@ -1,12 +1,9 @@
 /*
  *  cnvfloat.c
- *  cnvseg2sth
- *  cnvsth2seg
  *
- *  Created by Ian Kelly on 08/01/2013.
  *  Copyright 2013 Westheimer Energy Consultants Inc/Ltd. All rights reserved.
  *
- *  This file last updated 2013.02.12 12:15
+ *  This file last updated 2013.08.15 10:40
  */
 
 #include <stdlib.h>
@@ -20,7 +17,9 @@
 #include <math.h>         /* for sqrt()            */
 #include <netinet/in.h>   /* for htonl() ntohl()   */
 
-#include "cnvseg2sth.h"
+#include "cnvswap.h"
+#include "cnvendian.h"
+#include "cnvfloat.h"
 
 /* Force no test on overflow: */
 #ifdef TEST_FLOAT_OVERFLOW
@@ -250,6 +249,14 @@ void ieee2ibm(void *to, const void *from, int len)
 }
 #endif
 
+/*
+ *  The code which follows is an alternative method of performing the ibm-ieee
+ *  conversions. The code above (the code that is used) appears to be more time
+ *  efficient (date 20130815), but if that is an incorrect analysis the the
+ *  following code can be used instead - it should be functionally identical:
+ *  that is, it converts from ibm to ieee floating point format,
+ *  in both little and big-endian environments.
+ */
 #if (0==1)
 static void ibm2ieee(int to[], int from[], int n, int endian)
 /***********************************************************************
@@ -303,3 +310,7 @@ static void ibm2ieee(int to[], int from[], int n, int endian)
 }
 #endif
 
+/*******************************************************************************
+ *  End of cnvfloat.c		
+ *  Copyright 2012, 2013 Westheimer Energy Consulting Ltd. All rights reserved.
+ ******************************************************************************/
