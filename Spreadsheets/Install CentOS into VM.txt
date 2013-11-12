@@ -1,0 +1,216 @@
+
+Select "Create a New Virtual Machine" from Welcome to VMware Player screen
+
+New Virtual Machine Wizard starts:-
+
+Page 1: Welcome to the New Virtual Machine Wizard
+Select the location of your installer image from disk (second option)
+
+Page 2: Easy Install Information
+Asks for "Full name" and passwords.
+Sets up a normal user, and root, and they share the password.
+
+Page 3: Name the Virtual Machine
+Set the new machine name, and it's location on disk.
+
+Page 4: Specify Disk Capacity
+Disk Space:
+
+Spliting the files seems like a good idea?
+
+Page 5: Summary
+
+"next" kicks off the install ...
+
+
+Login and attempt to set suitable security:-
+   See : http://wiki.centos.org/HowTos/Network/SecuringSSH
+
+   1) Use Strong Password/Usernames
+      root  FunSp0nge - Console Login Only
+      isds  H1ghEnergy
+      agmw  ********    Capone Nil
+
+   2) Disable Root Logins (other than on Console): In file /etc/ssh/sshd_config
+     PermitRootLogin no
+   ... and restart the sshd service
+     service sshd restart
+
+   3) Limited User Logins: In file /etc/ssh/sshd_config
+   Only specified Users will be able to login via SSH
+     AllowUsers agmw
+   ... and restart the sshd service
+     service sshd restart
+
+
+Boot Single User:-
+================
+Press 'any key' at start of boot process
+NB: If running in a VM you must 'click' to give the console input focus before you can press 'any key'.
+
+Select the boot line and press 'a' to append to the end of the boot line. Add " single" to the end of the line and press RETURN.
+
+Do whatever it is you wanted it in single user mode for
+    eg Change /etc/hosts or /etc/fstab
+
+To exit single user mode
+    init 0 : to halt the system
+    init 3 : to boot to text interface
+    init 5 : to boot to graphical interface
+    init 6 : to reboot
+
+
+Change Hostname:-
+===============
+Instructions from http://www.rackspace.com/knowledge_center/article/centos-hostname-change
+    Step 1:-
+        As root, edit the following file ...
+            # vi /etc/sysconfig/network
+        Modify the "HOSTNAME=.." value ...
+
+    Step 2:-
+        As root, edit the hosts file ...
+            # vi /etc/hosts
+        Add/change IP address to use new name(s)
+
+    Step 3:-
+        Run 'hostname' as root ...
+            # hostname <new hostname>
+
+    Step 4:-
+        Restart networking, as root run ...
+            # /etc/init.d/network restart
+
+
+Change System Timezone:-
+======================
+
+
+Change System DateTime:-
+======================
+
+
+Fixed IP:-   *** Doesn't Work ... so BE CAREFUL ***
+========
+   Using http://www.broexperts.com/2013/03/how-to-setup-static-ip-in-centos-6-3/
+
+   1) Update /etc/sysconfig/network-scripts/ifcfg-eth0
+     Dynamic                         Static
+    =========                       ========
+DEVICE        ="eth0"                =
+BOOTPROTO     ="dhcp"                ="static"
+IPADDR        <none>                 =192.168.1.1
+NETMASK       <none>                 =255.255.255.0
+HWADDR        ="00:1C:C4:48:6C:ED"   =
+NM_CONTROLLED ="yes"                 ="no"
+ONBOOT        ="no"                  ="yes"
+TYPE          ="Ethernet"            =
+UUID          ="2cb817b1-2553-4cf6-9d16-48a0ef32d3b2"
+
+   2) Network Manager
+       # service NetworkManager stop
+       # chkconfig NetworkManager off
+
+   3) Assign gateway IP address
+       Edit /etc/sysconfig/network
+           NETWORKING=yes
+           HOSTNAME=lx.broexperts.com
+           GATEWAY=192.168.1.100
+
+   4) Assign DNS server ip address
+       Edit /etc/resolv.conf
+           nameserver 192.168.1.200
+
+   5) Restart network service
+       # service network restart
+
+
+Add New Disk:-
+==============
+If you've added a new disk to the server (or new virtual disk to a VM server)
+you need to format it and build a partition table.
+
+    Add New Disks
+    -------------
+    Under ESXi I added new storages using the Isilon.
+
+    Show New Disks
+    --------------
+    If you look in /dev you should see the new disks you've added...
+        # ls -l /dev/sd*
+        brw-rw---- 1 root disk 8,  0 Nov 11 11:41 /dev/sda
+        brw-rw---- 1 root disk 8,  1 Nov 11 11:41 /dev/sda1
+        brw-rw---- 1 root disk 8,  2 Nov 11 11:41 /dev/sda2
+        brw-rw---- 1 root disk 8,  3 Nov 11 11:41 /dev/sda3
+        brw-rw---- 1 root disk 8, 16 Nov 11 11:41 /dev/sdb
+        brw-rw---- 1 root disk 8, 17 Nov 11 11:41 /dev/sdb1
+        brw-rw---- 1 root disk 8, 32 Nov 11 13:53 /dev/sdc      - New Disk
+        brw-rw---- 1 root disk 8, 48 Nov 11 14:00 /dev/sdd      - New Disk
+        brw-rw---- 1 root disk 8, 64 Nov 11 11:41 /dev/sde      - New Disk
+        brw-rw---- 1 root disk 8, 80 Nov 11 11:41 /dev/sdf      - New Disk
+
+    In this example I added four new disks.
+    
+
+    Create a Partition Table
+    ------------------------
+    Assuming the new device is called /dev/sdn, as root, 
+
+        # fdisk /dev/sdn
+
+    This enters a command line driven tool for building the partition table.
+    Select the following options:-
+        n<RETURN>  : New Partition
+        p<RETURN>  : and it's a Primary Partition
+        1<RETURN>  : Use Partition No. 1 (one)
+        <RETURN>   : take the default First cylinder (1)
+        <RETURN>   : take the default Last cylinder (267349 in my case)
+        w<RETURN>  : Write new partition to disk and exit
+
+    Looking again at the devices in /dev you will now notice there are some new 
+    files representing the new Partitions you just made:-
+        ...
+        brw-rw---- 1 root disk 8, 32 Nov 11 13:53 /dev/sdc       - Device
+        brw-rw---- 1 root disk 8, 32 Nov 11 13:53 /dev/sdc1      - Parition 1
+        brw-rw---- 1 root disk 8, 48 Nov 11 14:00 /dev/sdd
+        brw-rw---- 1 root disk 8, 32 Nov 11 13:53 /dev/sdd1
+        brw-rw---- 1 root disk 8, 64 Nov 11 11:41 /dev/sde
+        brw-rw---- 1 root disk 8, 32 Nov 11 13:53 /dev/sde1
+        brw-rw---- 1 root disk 8, 80 Nov 11 11:41 /dev/sdf
+        brw-rw---- 1 root disk 8, 32 Nov 11 13:53 /dev/sdf1
+
+
+    Format Hard Disk
+    ----------------
+    Using the newly created devices (eg /dev/sdc1), format each partition. In our
+    case we've only created one partition per device :-
+
+        # mke2fs /dev/sdc1
+
+
+    Update /etc/fstab
+    -----------------
+    Firstly, we need to make a mount point for each partition to be mounted
+
+        # mkdir /<mount point>
+
+    Then we edit /etc/fstab to include the new partition(s)
+
+        # vi /etc/fstab
+
+    Add a suitable new line, for example ...
+
+        /dev/sdc1    <mount point>   ext3   defaults   1 2
+
+    Then mount the new devices:-
+
+        # mount -a
+
+    And finally check they've mounted OK ...
+
+        # df -H
+
+
+
+
+
